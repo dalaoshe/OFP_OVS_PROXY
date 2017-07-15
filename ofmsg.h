@@ -19,7 +19,7 @@ public:
     }
 };
 
-int read_ofp_msg (int fd, char* buf, pthread_t tid);
+int read_ofp_msg (int fd, char* buf, pthread_t tid, char* endpoint);
 
 
 #endif //TCP_TUNNEL_OFMSG_H
