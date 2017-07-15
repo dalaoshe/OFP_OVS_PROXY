@@ -1,6 +1,6 @@
 #include <iostream>
 #include "unp.h"
-
+#include "ofmsg.h"
 
 void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport);
 
@@ -14,6 +14,7 @@ struct TunArg{
     int client_fd;
     int server_fd;
     pthread_t server_tid;
+    uint16_t port;
 };
 
 void* read_client(void* argv) {
@@ -22,11 +23,13 @@ void* read_client(void* argv) {
     int client_fd = arg->client_fd;
     int server_fd = arg->server_fd;
     pthread_t server_tid = arg->server_tid;
+    uint16_t port = arg->port;
     char buf[65539];
-
+    int count = 0;
     while (1) {
         memset(buf, 0, sizeof(buf));
-        int cn = read(client_fd, buf, sizeof(buf));
+        //int cn = read(client_fd, buf, sizeof(buf));
+        int cn = read_ofp_msg(client_fd, buf, port);
         if (cn < 0) {
             fprintf(stderr, "read client sockfd %d error: %s \n", client_fd, strerror(errno));
             Close(client_fd);
@@ -38,7 +41,7 @@ void* read_client(void* argv) {
             fprintf(stderr, "kill server thread %d error: %s \n", server_tid, strerror(errno));
             break;
         } else if (cn == 0) {
-            fprintf(stderr, "client try to close sockfd %d \n", client_fd);
+            fprintf(stderr, "port:%d client try to close sockfd %d \n",port, client_fd);
             Close(client_fd);
             Close(server_fd);
             if(pthread_kill(server_tid, SIGUSR1) != 0) {
@@ -106,9 +109,9 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
     int on = 1;
     SetSocket(listenTunnel, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
     Bind_Socket(listenTunnel, (SA*)&tunnel, sizeof(tunnel));
-    printf("to listen\n");
-    Listen(listenTunnel, 4);
 
+    Listen(listenTunnel, 4);
+    printf("read to listen\n");
 
     while(1) {
         int client_fd =Accept(listenTunnel, (SA*)&client, &len);
@@ -128,7 +131,7 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             fprintf(stderr, "tunnel connect server ok \n");
 
 
-            TunArg tun; tun.server_fd = server_fd; tun.client_fd = client_fd;
+            TunArg tun; tun.server_fd = server_fd; tun.client_fd = client_fd; tun.port = ntohs(client.sin_port);
             pthread_t t_client, t_server;
             pthread_create(&t_server, NULL, &read_server, (void*)&tun);
             tun.server_tid = t_server;

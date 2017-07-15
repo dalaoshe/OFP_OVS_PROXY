@@ -37,7 +37,7 @@
 #include <netinet/ip_icmp.h>
 
 #include <linux/netlink.h>
-
+#include <zconf.h>
 
 #define	SA	struct sockaddr
 #define SERV_PORT 6666

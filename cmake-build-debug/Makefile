@@ -177,6 +177,33 @@ main.cpp.s:
 	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/main.cpp.s
 .PHONY : main.cpp.s
 
+ofmsg.o: ofmsg.cpp.o
+
+.PHONY : ofmsg.o
+
+# target to build an object file
+ofmsg.cpp.o:
+	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/ofmsg.cpp.o
+.PHONY : ofmsg.cpp.o
+
+ofmsg.i: ofmsg.cpp.i
+
+.PHONY : ofmsg.i
+
+# target to preprocess a source file
+ofmsg.cpp.i:
+	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/ofmsg.cpp.i
+.PHONY : ofmsg.cpp.i
+
+ofmsg.s: ofmsg.cpp.s
+
+.PHONY : ofmsg.s
+
+# target to generate assembly for a file
+ofmsg.cpp.s:
+	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/ofmsg.cpp.s
+.PHONY : ofmsg.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -192,6 +219,9 @@ help:
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
+	@echo "... ofmsg.o"
+	@echo "... ofmsg.i"
+	@echo "... ofmsg.s"
 .PHONY : help
 
 

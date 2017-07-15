@@ -1,0 +1,144 @@
+tunnel recv connect from ip:127.0.0.1, port:43826
+tunnel connect server ok 
+tunnel wait server_thread close 
+need read fd:4 byte:8, actuall read 0 count:1 tid:43826
+read rc == 0 
+recv ofp_mesg error, error:Success
+port:43826 client try to close sockfd 4 
+kill server thread 679839488 error: Success 
+tunnel wait client_thread close 
+tunnel close 
+tunnel recv connect from ip:127.0.0.1, port:43832
+tunnel connect server ok 
+tunnel wait server_thread close 
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+port:43832 mes-head-len is :8, read:1 times, read:8 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:24, actuall read 24 count:2 tid:43832
+port:43832 mes-head-len is :32, read:2 times, read:32 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:200, actuall read 200 count:2 tid:43832
+port:43832 mes-head-len is :208, read:2 times, read:208 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+port:43832 mes-head-len is :8, read:1 times, read:8 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:4, actuall read 4 count:2 tid:43832
+port:43832 mes-head-len is :12, read:2 times, read:12 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:1064, actuall read 1064 count:2 tid:43832
+port:43832 mes-head-len is :1072, read:2 times, read:1072 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:63656, actuall read 40952 count:2 tid:43832
+need read fd:4 byte:22704, actuall read 22704 count:3 tid:43832
+port:43832 mes-head-len is :63664, read:3 times, read:63664 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:63144, actuall read 63144 count:2 tid:43832
+port:43832 mes-head-len is :63152, read:2 times, read:63152 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:62632, actuall read 62632 count:2 tid:43832
+port:43832 mes-head-len is :62640, read:2 times, read:62640 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:62120, actuall read 62120 count:2 tid:43832
+port:43832 mes-head-len is :62128, read:2 times, read:62128 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:65448, actuall read 35128 count:2 tid:43832
+need read fd:4 byte:30320, actuall read 30320 count:3 tid:43832
+port:43832 mes-head-len is :65456, read:3 times, read:65456 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:64856, actuall read 35208 count:2 tid:43832
+need read fd:4 byte:29648, actuall read 29648 count:3 tid:43832
+port:43832 mes-head-len is :64864, read:3 times, read:64864 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:64280, actuall read 64280 count:2 tid:43832
+port:43832 mes-head-len is :64288, read:2 times, read:64288 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:63704, actuall read 53512 count:2 tid:43832
+need read fd:4 byte:10192, actuall read 10192 count:3 tid:43832
+port:43832 mes-head-len is :63712, read:3 times, read:63712 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:63128, actuall read 55336 count:2 tid:43832
+need read fd:4 byte:7792, actuall read 7792 count:3 tid:43832
+port:43832 mes-head-len is :63136, read:3 times, read:63136 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:62552, actuall read 62552 count:2 tid:43832
+port:43832 mes-head-len is :62560, read:2 times, read:62560 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:61976, actuall read 60712 count:2 tid:43832
+need read fd:4 byte:1264, actuall read 1264 count:3 tid:43832
+port:43832 mes-head-len is :61984, read:3 times, read:61984 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:65000, actuall read 65000 count:2 tid:43832
+port:43832 mes-head-len is :65008, read:2 times, read:65008 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:64328, actuall read 64328 count:2 tid:43832
+port:43832 mes-head-len is :64336, read:2 times, read:64336 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:63688, actuall read 63688 count:2 tid:43832
+port:43832 mes-head-len is :63696, read:2 times, read:63696 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:59544, actuall read 10488 count:2 tid:43832
+need read fd:4 byte:49056, actuall read 49056 count:3 tid:43832
+port:43832 mes-head-len is :59552, read:3 times, read:59552 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:16, actuall read 16 count:2 tid:43832
+port:43832 mes-head-len is :24, read:2 times, read:24 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:20, actuall read 20 count:2 tid:43832
+port:43832 mes-head-len is :28, read:2 times, read:28 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+port:43832 mes-head-len is :8, read:1 times, read:8 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+port:43832 mes-head-len is :8, read:1 times, read:8 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+port:43832 mes-head-len is :8, read:1 times, read:8 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:124, actuall read 124 count:2 tid:43832
+port:43832 mes-head-len is :132, read:2 times, read:132 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:104, actuall read 104 count:2 tid:43832
+port:43832 mes-head-len is :112, read:2 times, read:112 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:124, actuall read 124 count:2 tid:43832
+port:43832 mes-head-len is :132, read:2 times, read:132 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:124, actuall read 124 count:2 tid:43832
+port:43832 mes-head-len is :132, read:2 times, read:132 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:104, actuall read 104 count:2 tid:43832
+port:43832 mes-head-len is :112, read:2 times, read:112 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:124, actuall read 124 count:2 tid:43832
+port:43832 mes-head-len is :132, read:2 times, read:132 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:76, actuall read 76 count:2 tid:43832
+port:43832 mes-head-len is :84, read:2 times, read:84 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:76, actuall read 76 count:2 tid:43832
+port:43832 mes-head-len is :84, read:2 times, read:84 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:132, actuall read 132 count:2 tid:43832
+port:43832 mes-head-len is :140, read:2 times, read:140 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:132, actuall read 132 count:2 tid:43832
+port:43832 mes-head-len is :140, read:2 times, read:140 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+port:43832 mes-head-len is :8, read:1 times, read:8 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:104, actuall read 104 count:2 tid:43832
+port:43832 mes-head-len is :112, read:2 times, read:112 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:104, actuall read 104 count:2 tid:43832
+port:43832 mes-head-len is :112, read:2 times, read:112 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:72, actuall read 72 count:2 tid:43832
+port:43832 mes-head-len is :80, read:2 times, read:80 byte
+need read fd:4 byte:8, actuall read 8 count:1 tid:43832
+need read fd:4 byte:72, actuall read 72 count:2 tid:43832
+port:43832 mes-head-len is :80, read:2 times, read:80 byte
+need read fd:4 byte:8, actuall read 0 count:1 tid:43832
+read rc == 0 
+recv ofp_mesg error, error:Success
+port:43832 client try to close sockfd 4 
+kill server thread 679839488 error: Success 
+tunnel wait client_thread close 
+tunnel close 
