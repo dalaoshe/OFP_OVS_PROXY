@@ -77,4 +77,5 @@ int Inet_pton(int __af, const char *__restrict __cp, void *__restrict __buf);
 int Inet_ntop(int __af, const void *__restrict __cp, char *__restrict __buf, socklen_t __len);
 
 ssize_t Write_nByte(int fd, char* buf, ssize_t nbyte);
+ssize_t Writev_nByte(int fd, char* buf, ssize_t nbyte);
 #endif //UDP_UNP_H

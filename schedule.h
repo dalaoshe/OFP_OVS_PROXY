@@ -24,8 +24,12 @@ public:
 public:
     OFP_Msg(char* msg, int32_t len, int32_t fd, int32_t priority) {
         this->buf = new char [len];
+        memset(this->buf, 0, len);
         this->len = len;
-        strncpy(this->buf, msg, len);
+        for(int i = 0 ; i < len; ++i) {
+            this->buf[i] = msg[i];
+        }
+//        strncpy(this->buf, msg, len);
         this->priority = priority;
         this->fd = fd;
     }
@@ -53,6 +57,7 @@ public:
         this->msg_queue.push(msg);
         this->size ++;
         pthread_mutex_unlock(&this->queue_mutex);
+        return 0;
     }
     OFP_Msg* fetchMsg() {
         pthread_mutex_lock(&this->queue_mutex);
@@ -60,6 +65,9 @@ public:
         if(!this->msg_queue.empty()) {
             msg = msg_queue.front();
             msg_queue.pop();
+        }
+        else {
+
         }
         pthread_mutex_unlock(&this->queue_mutex);
         return msg;
@@ -79,10 +87,12 @@ class Schedule {
     Queue msg_queue;
     pthread_mutex_t policy_mutex;
     std::vector<Policy*> policies;
+    char name[30];
    // int32_t fd;
 public:
-    Schedule() {
+    Schedule(char* name) {
         policy_mutex = PTHREAD_MUTEX_INITIALIZER;
+        strcpy(this->name, name);
      //   this->fd = fd;
     }
     int32_t putMessage(char* msg, int32_t len, int32_t fd);

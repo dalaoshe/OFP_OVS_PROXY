@@ -116,3 +116,14 @@ ssize_t Write_nByte(int fd, char* buf, ssize_t nbyte) {
     }
     return n;
 }
+
+ssize_t Writev_nByte(int fd, char* buf, ssize_t nbyte) {
+    struct iovec iov[2];
+    iov[0].iov_base = buf;
+    iov[0].iov_len = nbyte;
+    ssize_t n = writev(fd, iov, 1);
+    if(n != nbyte) {
+        fprintf(stderr, "write fd %d nbyte error, need %d byte, write %d byte\n",fd, nbyte, n);
+    }
+    return n;
+}

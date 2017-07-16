@@ -23,7 +23,7 @@ struct TunArg{
 };
 
 void* read_client(void* argv) {
-   // pthread_detach(pthread_self());
+
     TunArg* arg = (TunArg*)argv;
     int32_t client_fd = arg->client_fd;
     int32_t server_fd = arg->server_fd;
@@ -60,8 +60,8 @@ void* read_client(void* argv) {
 //            struct openflow::ofp_header *header =
 //                    (struct openflow::ofp_header *)(buf);
 
-            Write_nByte(server_fd, buf, cn);
-            //client_to_server_schedule->putMessage(buf, cn, server_fd);
+         //   Write_nByte(server_fd, buf, cn);
+            client_to_server_schedule->putMessage(buf, cn, server_fd);
 //            if(header->type == openflow::OFPT_FLOW_MOD || header->type == openflow::OFPT_PACKET_IN) {
 //                timeval told = *arg->t;
 //                gettimeofday( arg->t, NULL );
@@ -84,9 +84,11 @@ void signal_handler(int signum) {
 
 void* read_server(void* argv) {
     TunArg* arg = (TunArg*)argv;
-    int client_fd = arg->client_fd;
-    int server_fd = arg->server_fd;
-    int port = arg->port;
+    int32_t client_fd = arg->client_fd;
+    int32_t server_fd = arg->server_fd;
+    int16_t port = arg->port;
+    Schedule* server_to_client_schedule = arg->server_to_client_schedule;
+
     char buf[65539];
     signal(SIGUSR1, signal_handler);
     while(1) {
@@ -102,15 +104,21 @@ void* read_server(void* argv) {
             Close(server_fd);
             break;
         } else {
-            struct openflow::ofp_header *header =
-                    (struct openflow::ofp_header *)(buf);
-            Write_nByte(client_fd, buf, sn);
-            if(header->type == openflow::OFPT_FLOW_MOD || header->type == openflow::OFPT_PACKET_IN) {
-                gettimeofday( arg->t_2, NULL );
-                double ms = (double (arg->t_2->tv_sec-arg->t->tv_sec) * 1000.0) + (double (arg->t_2->tv_usec - arg->t->tv_usec) / 1000.0);
-                fprintf(stderr, "server:port:%d read %d byte from server by server_fd %d to client_fd %d user:%lf ms\n", port, sn,
-                        server_fd, client_fd, ms);
-            }
+//            struct openflow::ofp_header *header =
+//                    (struct openflow::ofp_header *)(buf);
+
+//            SetSocket(client_fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
+//            Writev_nByte(client_fd, buf, sn);
+//            SetSocket(client_fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
+//
+//            if(header->type == openflow::OFPT_FLOW_MOD || header->type == openflow::OFPT_PACKET_IN) {
+//                gettimeofday( arg->t_2, NULL );
+//                double ms = (double (arg->t_2->tv_sec-arg->t->tv_sec) * 1000.0) + (double (arg->t_2->tv_usec - arg->t->tv_usec) / 1000.0);
+//                fprintf(stderr, "server:port:%d read %d byte from server by server_fd %d to client_fd %d user:%lf ms\n", port, sn,
+//                        server_fd, client_fd, ms);
+//            }
+
+            server_to_client_schedule->putMessage(buf, sn, client_fd);
         }
     }
 }
@@ -155,14 +163,17 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             int server_fd = Socket(AF_INET, SOCK_STREAM, 0);
             Socket_Peer_Connect(server_fd, (SA*)&server, len);
 
+            int on = 1;
             SetSocket(server_fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
             SetSocket(client_fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
+            SetSocket(client_fd, IPPROTO_TCP, TCP_QUICKACK, &on, sizeof(on));
+            SetSocket(server_fd, IPPROTO_TCP, TCP_QUICKACK, &on, sizeof(on));
 
             fprintf(stderr, "port:%d tunnel connect server ok, sockfd is %d\n",ntohs(client.sin_port), server_fd);
 
             //start schedule
-            Schedule* client_to_server_schedule = new Schedule();
-            Schedule* server_to_client_schedule = new Schedule();
+            Schedule* client_to_server_schedule = new Schedule("CLIENT");
+            Schedule* server_to_client_schedule = new Schedule("SERVER");
             pthread_t s1, s2;
             ScheduleArg arg1, arg2;
             arg1.schedule = client_to_server_schedule;
@@ -188,10 +199,13 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             tun.server_tid = t_server;
             pthread_create(&t_client, NULL, &read_client, (void*)&tun);
 
-            fprintf(stderr, "port:%d tunnel wait server_thread close \n",ntohs(client.sin_port), strerror(errno));
-            pthread_join(t_server, NULL);
+
             fprintf(stderr, "port:%d tunnel wait client_thread close \n",ntohs(client.sin_port), strerror(errno));
             pthread_join(t_client, NULL);
+
+            fprintf(stderr, "port:%d tunnel wait server_thread close \n",ntohs(client.sin_port), strerror(errno));
+            pthread_join(t_server, NULL);
+
             fprintf(stderr, "port:%d tunnel close \n",ntohs(client.sin_port), strerror(errno));
 
             exit(0);

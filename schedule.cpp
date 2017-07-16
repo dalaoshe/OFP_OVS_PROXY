@@ -10,14 +10,17 @@ int32_t Schedule::putMessage(char* msg, int32_t len, int32_t fd) {
     OFP_Msg* ofp_msg = new OFP_Msg(msg, len, fd, priority);
     switch(qid) {
         case PI_QUEUE_ID: {//packet_in
+            fprintf(stderr, "Client PUT PACKET_IN MSG\n");
             pi_queue.putMsg(ofp_msg);
             break;
         }
         case MSG_QUEUE_ID: {
+            fprintf(stderr, "Client PUT OF MSG\n");
             msg_queue.putMsg(ofp_msg);
             break;
         }
         default: {//other
+            fprintf(stderr, "Client PUT OTHER MSG\n");
             msg_queue.putMsg(ofp_msg);
             break;
         }
@@ -26,14 +29,17 @@ int32_t Schedule::putMessage(char* msg, int32_t len, int32_t fd) {
 
 int32_t Schedule::run() {
     int32_t  times = 0;
+    int on = 1, off = 0;
     while (1) {
         OFP_Msg* msg = msg_queue.fetchMsg();
         if(msg != NULL) {
             struct openflow::ofp_header *header =
                     (struct openflow::ofp_header *)(msg->buf);
-            Write_nByte(msg->fd, msg->buf, msg->len);
-            if(header->type == openflow::OFPT_FLOW_MOD || header->type == openflow::OFPT_PACKET_IN) {
-                fprintf(stderr, "Client Read(OTHER_MSG) %d byte SEND to server_fd %d \n", msg->len, msg->fd);
+            if(!(header->type == openflow::OFPT_PACKET_IN)) {
+                fprintf(stderr, "%s:Read(OTHER_MSG,TYPE:%d) %d byte SEND to server_fd %d \n",this->name, header->type, msg->len, msg->fd);
+                SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
+                Writev_nByte(msg->fd, msg->buf, msg->len);
+                SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
             }
             delete msg;
         }
@@ -42,9 +48,11 @@ int32_t Schedule::run() {
             if(msg != NULL) {
                 struct openflow::ofp_header *header =
                         (struct openflow::ofp_header *)(msg->buf);
-                Write_nByte(msg->fd, msg->buf, msg->len);
                 if(header->type == openflow::OFPT_FLOW_MOD || header->type == openflow::OFPT_PACKET_IN) {
-                    fprintf(stderr, "Client Read(PACKET_IN) %d byte SEND to server_fd %d \n", msg->len, msg->fd);
+                    fprintf(stderr, "%s:Read(PACKET_IN) %d byte SEND to server_fd %d \n",this->name, msg->len, msg->fd);
+                    SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
+                    Writev_nByte(msg->fd, msg->buf, msg->len);
+                    SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK,(char*)&off, sizeof(off));
                 }
                 delete msg;
             }

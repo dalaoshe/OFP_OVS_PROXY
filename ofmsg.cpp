@@ -41,7 +41,7 @@ void parse_message(char* buf){
 
 
 };
-int read_ofp_msg(int fd, char* buf, pthread_t tid, char* endpoint) {
+int read_ofp_msg(int fd, char* buf, int32_t port, char* endpoint) {
     /*
  * receiving messages
  */
@@ -79,7 +79,7 @@ int read_ofp_msg(int fd, char* buf, pthread_t tid, char* endpoint) {
 
 //        /* sanity check: 8 <= msg_len <= 2^16 */
         if (msg_len < sizeof(struct openflow::ofp_header)) {
-            fprintf(stderr, "%s:port:%d read first segment < ofp_header\n",endpoint, tid);
+            fprintf(stderr, "%s:port:%d read first segment < ofp_header\n",endpoint, port);
             goto on_error;
         }
 
@@ -90,7 +90,7 @@ int read_ofp_msg(int fd, char* buf, pthread_t tid, char* endpoint) {
        //fprintf(stderr, "need read fd:%d byte:%d, actuall read %d count:%d tid:%d\n",fd, msg_len-msg_bytes_read, rc,count, tid);
 
         if (rc < 0) {
-            fprintf(stderr, "%s:port:%d read rc < 0, ERROR:%s\n",endpoint, tid,strerror(errno));
+            fprintf(stderr, "%s:port:%d read rc < 0, ERROR:%s\n",endpoint, port,strerror(errno));
             switch (errno) {
                 case EAGAIN: {
                     return rc;
@@ -101,7 +101,7 @@ int read_ofp_msg(int fd, char* buf, pthread_t tid, char* endpoint) {
                 };
             }
         } else if (rc == 0) {
-            fprintf(stderr, "%s:port:%d read rc == 0, close\n",endpoint, tid);
+            fprintf(stderr, "%s:port:%d read rc == 0, close\n",endpoint, port);
             goto on_error;
         }
 
@@ -129,7 +129,7 @@ int read_ofp_msg(int fd, char* buf, pthread_t tid, char* endpoint) {
 
                         fprintf(stderr, "\n\n\n%s:port:%d read PACKET_IN, use time %.2f ms, "
                                 "mes-head-len is :%d, read:%d times, TransactionID:%u \n\n\n",
-                                endpoint, tid,ms,be16toh(header->length), count, xid);
+                                endpoint, port, ms, be16toh(header->length), count, xid);
                         break;
                     }
                     case rofl::openflow::OFPT_FLOW_MOD: {
