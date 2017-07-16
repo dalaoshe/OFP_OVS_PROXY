@@ -90,7 +90,7 @@ int read_ofp_msg(int fd, char* buf, pthread_t tid, char* endpoint) {
        //fprintf(stderr, "need read fd:%d byte:%d, actuall read %d count:%d tid:%d\n",fd, msg_len-msg_bytes_read, rc,count, tid);
 
         if (rc < 0) {
-            fprintf(stderr, "%s:port:%d read rc < 0 \n",endpoint, tid);
+            fprintf(stderr, "%s:port:%d read rc < 0, ERROR:%s\n",endpoint, tid,strerror(errno));
             switch (errno) {
                 case EAGAIN: {
                     return rc;
@@ -101,7 +101,7 @@ int read_ofp_msg(int fd, char* buf, pthread_t tid, char* endpoint) {
                 };
             }
         } else if (rc == 0) {
-            fprintf(stderr, "%s:port:%d read rc == 0 \n",endpoint, tid);
+            fprintf(stderr, "%s:port:%d read rc == 0, close\n",endpoint, tid);
             goto on_error;
         }
 
@@ -168,7 +168,7 @@ int read_ofp_msg(int fd, char* buf, pthread_t tid, char* endpoint) {
 
     on_error:
 
-    fprintf(stderr, "port:%d recv ofp_mesg error, error:%s\n",tid, strerror(errno));
+    //fprintf(stderr, "port:%d recv ofp_mesg error, error:%s\n",tid, strerror(errno));
     return rc;
 //    switch (state) {
 //        case STATE_TCP_ESTABLISHED: {
