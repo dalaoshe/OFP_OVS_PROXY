@@ -32,7 +32,8 @@ public:
         this->fd = fd;
         this->in_process = 0;
 
-        memset(buf, 0, len);
+        this->buf = new char[len];
+        //memset(buf, 0, len);
         this->buf = new char [len];
         for(int i = 0 ; i < len; ++i) {
             this->buf[i] = msg[i];
@@ -73,11 +74,14 @@ public:
     int32_t decMsgTime() {
         pthread_mutex_lock(&this->queue_mutex);
         uint64_t num = this->msg_queue.size();
+//        if(num > 0) {
+//            fprintf(stderr, "\n\n dec time %u \n\n", num);
+//        }
         for(uint64_t i = 0; i < num; ++i) {
             this->msg_queue[i]->max_wait_time --;
             if(this->msg_queue[i]->in_process) {
                 this->msg_queue[i]->process_time --;
-                fprintf(stderr, "\n\n need time \n\n", this->msg_queue[i]->process_time);
+              //  fprintf(stderr, "\n\n need time %d \n\n", this->msg_queue[i]->process_time);
             }
         }
         pthread_mutex_unlock(&this->queue_mutex);
@@ -88,14 +92,22 @@ public:
         pthread_mutex_lock(&this->queue_mutex);
         uint64_t num = this->msg_queue.size();
         int32_t count = 0;
-        for(uint64_t i,index = 0; i < num; ++i,++index) {
-            if(this->msg_queue[index]->in_process && this->msg_queue[index]->process_time < 0) {
+        for(uint64_t i = 0,index = 0; i < num; ++i,++index) {
+            //fprintf(stderr, "\n\n packet need time %d in process %d \n\n", this->msg_queue[index]->process_time, this->msg_queue[index]->in_process);
+
+            if((this->msg_queue[index]->in_process) && (this->msg_queue[index]->process_time < 0)) {
+                delete this->msg_queue[index];
                 this->msg_queue.erase(this->msg_queue.begin() + index);
                 --index;
                 ++count;
-                delete this->msg_queue[index];
             }
+            else {
+//                fprintf(stderr, "\n\n packet need time %d in process %d \n\n", this->msg_queue[index]->process_time, this->msg_queue[index]->in_process);
+            }
+            //fprintf(stderr, "\n\n clean count %d \n\n", count);
         }
+
+
         pthread_mutex_unlock(&this->queue_mutex);
         return count;
     }

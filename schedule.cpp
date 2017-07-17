@@ -76,9 +76,9 @@ int32_t Schedule::run2() {
         int32_t clean_num = 0;
         clean_num += this->msg_queue.cleanFinishMsg();
         clean_num += this->pi_queue.cleanFinishMsg();
-        if(clean_num > 0) {
-            fprintf(stderr, "\n\n\n CLEAN:%d \n\n\n", clean_num);
-        }
+//        if(clean_num > 0) {
+//            fprintf(stderr, "\n\n\n CLEAN:%d \n\n\n", clean_num);
+//        }
         max_in_process += clean_num;
         while(max_in_process > 0) {
             OFP_Msg* msg = msg_queue.fetchMsg();
@@ -117,11 +117,11 @@ int32_t Schedule::run2() {
                 break;
             }
         }
-
+        usleep(10);
 //        times++;
-        if(pi_queue.getSize() +  msg_queue.getSize() >= 2) {
-        //    fprintf(stderr, "\n\n iter:%d , PI_QUEUE_SIZE:%d MSG_QUEUE_SIZE:%d MAX_SIZE:%d\n\n", times, pi_queue.getSize(), msg_queue.getSize(), max_in_process);
-        }
+//        if(pi_queue.getSize() +  msg_queue.getSize() >= 2) {
+//            fprintf(stderr, "\n\n iter:%d , PI_QUEUE_SIZE:%d MSG_QUEUE_SIZE:%d MAX_SIZE:%d\n\n", times, pi_queue.getSize(), msg_queue.getSize(), max_in_process);
+//        }
     }
 }
 
@@ -167,10 +167,10 @@ int32_t Schedule::getProcessTime(char *msg) {
     uint32_t xid = header->xid;
 
     if(header->type == openflow::OFPT_PACKET_IN) {
-        return 30;
+        return 20;
     }
     else {
-        return 10;
+        return 2;
     }
 }
 
@@ -181,10 +181,10 @@ int32_t Schedule::getMaxWaitTime(char *msg) {
     uint32_t xid = header->xid;
 
     if(header->type == openflow::OFPT_PACKET_IN) {
-        return 30;
+        return 1;
     }
     else {
-        return 10;
+        return 1000;
     }
 }
 
