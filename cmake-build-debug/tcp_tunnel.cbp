@@ -109,6 +109,9 @@
 		<Unit filename="/home/dalaoshe/network_demo/tcp_tunnel/schedule.h">
 			<Option target="tcp_tunnel"/>
 		</Unit>
+		<Unit filename="/home/dalaoshe/network_demo/tcp_tunnel/test.cpp">
+			<Option target="tcp_tunnel"/>
+		</Unit>
 		<Unit filename="/home/dalaoshe/network_demo/tcp_tunnel/unp.h">
 			<Option target="tcp_tunnel"/>
 		</Unit>
