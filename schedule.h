@@ -150,14 +150,21 @@ class Policy {
 class Schedule {
     Queue pi_queue;
     Queue msg_queue;
+    std::vector<Queue*> queues;
     pthread_mutex_t policy_mutex;
     std::vector<Policy*> policies;
+    int32_t queue_num;
     char name[30];
    // int32_t fd;
 public:
     Schedule(char* name) {
         policy_mutex = PTHREAD_MUTEX_INITIALIZER;
         strcpy(this->name, name);
+        this->queue_num = 10;
+        for(int i = 0; i < this->queue_num; ++i) {
+            Queue* q = new Queue();
+            queues.push_back(q);
+        }
      //   this->fd = fd;
     }
     int32_t putMessage(char* msg, int32_t len, int32_t fd);

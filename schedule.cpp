@@ -13,20 +13,21 @@ int32_t Schedule::putMessage(char* msg, int32_t len, int32_t fd) {
     switch(qid) {
         case PI_QUEUE_ID: {//packet_in
             fprintf(stderr, "Client PUT PACKET_IN MSG\n");
-            pi_queue.putMsg(ofp_msg);
+            //pi_queue.putMsg(ofp_msg);
             break;
         }
         case MSG_QUEUE_ID: {
             fprintf(stderr, "Client PUT OF MSG\n");
-            msg_queue.putMsg(ofp_msg);
+            //msg_queue.putMsg(ofp_msg);
             break;
         }
         default: {//other
             fprintf(stderr, "Client PUT OTHER MSG\n");
-            msg_queue.putMsg(ofp_msg);
+            //msg_queue.putMsg(ofp_msg);
             break;
         }
     }
+    this->queues[qid]->putMsg(ofp_msg);
 }
 
 int32_t Schedule::run() {
@@ -71,53 +72,51 @@ int32_t Schedule::run2() {
     int32_t max_in_process = 1;
     int on = 1, off = 0;
     while (1) {
-        this->msg_queue.decMsgTime();
-        this->pi_queue.decMsgTime();
+        //update queue
         int32_t clean_num = 0;
-        clean_num += this->msg_queue.cleanFinishMsg();
-        clean_num += this->pi_queue.cleanFinishMsg();
-//        if(clean_num > 0) {
-//            fprintf(stderr, "\n\n\n CLEAN:%d \n\n\n", clean_num);
-//        }
+        for(int i = 0; i < this->queue_num; ++i) {
+            Queue *q = this->queues[i];
+            q->decMsgTime();
+            clean_num += q->cleanFinishMsg();
+        }
         max_in_process += clean_num;
+
         while(max_in_process > 0) {
-            OFP_Msg* msg = msg_queue.fetchMsg();
-            if(msg != NULL) {
+            OFP_Msg* msg = NULL;
+            bool has_msg = false;
+            for(int i = 0; i < this->queue_num; ++i) {
+                Queue* q = this->queues[i];
+                msg = q->fetchMsg();
+                if(msg == NULL) continue;
+                //send msg
+                SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
+                Writev_nByte(msg->fd, msg->buf, msg->len);
+                SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
+                //mark
+                msg->in_process = 1;
+                has_msg = true;
+                //print info
                 struct openflow::ofp_header *header =
                         (struct openflow::ofp_header *)(msg->buf);
                 if(!(header->type == openflow::OFPT_PACKET_IN)) {
                     fprintf(stderr, "%s:Read(OTHER_MSG,TYPE:%d) %d byte SEND to server_fd %d \n",this->name, header->type, msg->len, msg->fd);
-                    SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
-                    msg->in_process = 1;
-                    Writev_nByte(msg->fd, msg->buf, msg->len);
-                    SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
-                    max_in_process --;
                 }
-                //delete msg;
-            }
-            else {
-                msg = pi_queue.fetchMsg();
-                if(msg != NULL) {
-                    struct openflow::ofp_header *header =
-                            (struct openflow::ofp_header *)(msg->buf);
-                    if(header->type == openflow::OFPT_PACKET_IN) {
-                        fprintf(stderr, "%s:Read(PACKET_IN) %d byte SEND to server_fd %d \n",this->name, msg->len, msg->fd);
-                        SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
-                        msg->in_process = 1;
-                        Writev_nByte(msg->fd, msg->buf, msg->len);
-                        SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK,(char*)&off, sizeof(off));
-                        max_in_process --;
-                    }
-                    //delete msg;
+                else if(header->type == openflow::OFPT_PACKET_IN) {
+                    fprintf(stderr, "%s:Read(PACKET_IN) %d byte SEND to server_fd %d \n",this->name, msg->len, msg->fd);
                 }
+
+                break;
             }
             //no msg need process
-            if(msg == NULL) {
+            if(!has_msg) {
               //  fprintf(stderr, "\n\n get not msg , PI_QUEUE_SIZE:%d MSG_QUEUE_SIZE:%d \n\n", pi_queue.getSize(), msg_queue.getSize());
                 break;
             }
+            else {
+                max_in_process--;
+            }
         }
-        usleep(10);
+        usleep(100);
 //        times++;
 //        if(pi_queue.getSize() +  msg_queue.getSize() >= 2) {
 //            fprintf(stderr, "\n\n iter:%d , PI_QUEUE_SIZE:%d MSG_QUEUE_SIZE:%d MAX_SIZE:%d\n\n", times, pi_queue.getSize(), msg_queue.getSize(), max_in_process);
@@ -167,10 +166,10 @@ int32_t Schedule::getProcessTime(char *msg) {
     uint32_t xid = header->xid;
 
     if(header->type == openflow::OFPT_PACKET_IN) {
-        return 20;
+        return 10;
     }
     else {
-        return 2;
+        return 10;
     }
 }
 
@@ -181,10 +180,10 @@ int32_t Schedule::getMaxWaitTime(char *msg) {
     uint32_t xid = header->xid;
 
     if(header->type == openflow::OFPT_PACKET_IN) {
-        return 1;
+        return 10;
     }
     else {
-        return 1000;
+        return 50;
     }
 }
 
