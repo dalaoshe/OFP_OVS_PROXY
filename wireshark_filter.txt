@@ -1,0 +1,3 @@
+((openflow_v4.type==10 )||( openflow_v4.type==14 && (openflow_v4.flowmod.command == 0)) || ( openflow_v4.type==13 && ip.src == 10.0.0.1)) || (ip.src == 10.0.0.1 )
+
+((( openflow_v4.type==13 && ip.src == 10.0.0.1 && udp.dstport == 6666)) || (ip.src == 10.0.0.1 && udp.dstport == 6666))

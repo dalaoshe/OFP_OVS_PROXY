@@ -143,8 +143,37 @@ public:
     }
 };
 
-class Policy {
+#define MAX_MATCH_LEN 256
+#define POLICY_ADD 0
+#define POLICY_RESPONSE 1
+struct Policy {
+    struct hdr{
+        int32_t match_len;
+        int32_t priority;
+    }h;
+    char match[MAX_MATCH_LEN];
+};
 
+#define MAX_POLICY_MSG_DATA 1024
+struct PolicyMsg {
+    int8_t type;
+    int8_t policy_num;
+    int16_t byte_len;
+    char data[MAX_POLICY_MSG_DATA];
+};
+
+#define CONFIG_PORT 5656
+class PolicyConfig {
+    sockaddr_in server;
+    int32_t config_fd;
+    std::vector<Policy*> policies;
+    pthread_mutex_t policy_mutex = PTHREAD_MUTEX_INITIALIZER;
+public:
+    int32_t setupConf();
+    int32_t listenRequest();
+    std::vector<Policy*>* getAllPolices() {
+        return &(this->policies);
+    }
 };
 
 class Schedule {
@@ -152,7 +181,7 @@ class Schedule {
     Queue msg_queue;
     std::vector<Queue*> queues;
     pthread_mutex_t policy_mutex;
-    std::vector<Policy*> policies;
+    PolicyConfig* conf;
     int32_t queue_num;
     char name[30];
    // int32_t fd;
@@ -175,6 +204,9 @@ public:
     int32_t getQueueId(char* msg);
     int32_t getMaxWaitTime(char* msg);
     int32_t getProcessTime(char* msg);
+    void setConf(PolicyConfig* conf) {
+        this->conf = conf;
+    }
     ~Schedule() {
 
     }
@@ -183,6 +215,7 @@ public:
 struct ScheduleArg{
     Schedule* schedule;
     int32_t* fd;
+    PolicyConfig* config;
     //int32_t* server_fd;
 };
 void* schedule_thread(void* argv) ;

@@ -116,7 +116,7 @@ int32_t Schedule::run2() {
                 max_in_process--;
             }
         }
-        usleep(100);
+        //usleep(100);
 //        times++;
 //        if(pi_queue.getSize() +  msg_queue.getSize() >= 2) {
 //            fprintf(stderr, "\n\n iter:%d , PI_QUEUE_SIZE:%d MSG_QUEUE_SIZE:%d MAX_SIZE:%d\n\n", times, pi_queue.getSize(), msg_queue.getSize(), max_in_process);
@@ -156,6 +156,7 @@ int32_t Schedule::getPriority(char *msg) {
 void*  schedule_thread(void* argv)  {
     ScheduleArg* scheduleArg = (ScheduleArg*)argv;
     Schedule* schedule = scheduleArg->schedule;
+    schedule->setConf(scheduleArg->config);
     schedule->run2();
 }
 
@@ -166,10 +167,10 @@ int32_t Schedule::getProcessTime(char *msg) {
     uint32_t xid = header->xid;
 
     if(header->type == openflow::OFPT_PACKET_IN) {
-        return 10;
+        return 1;
     }
     else {
-        return 10;
+        return 1;
     }
 }
 
@@ -180,10 +181,70 @@ int32_t Schedule::getMaxWaitTime(char *msg) {
     uint32_t xid = header->xid;
 
     if(header->type == openflow::OFPT_PACKET_IN) {
-        return 10;
+        return 1;
     }
     else {
-        return 50;
+        return 1;
+    }
+}
+
+int32_t PolicyConfig::setupConf() {
+    this->config_fd = Socket(AF_INET, SOCK_DGRAM, 0);
+    this->server.sin_addr.s_addr = INADDR_ANY;
+    this->server.sin_port = htons(CONFIG_PORT);
+    this->server.sin_family = AF_INET;
+    socklen_t len = sizeof(this->server);
+    int on = 1;
+    SetSocket(this->config_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    SetSocket(this->config_fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+    Bind_Socket(this->config_fd, (SA*)&this->server, len);
+}
+
+int32_t PolicyConfig::listenRequest() {
+    PolicyMsg msg, response;
+    size_t max_len = sizeof(msg);
+    memset(&msg, 0, sizeof(msg));
+    sockaddr_in client;
+    socklen_t len = sizeof(client);
+    int flag = 0;
+    while(1) {
+        ssize_t n = recvfrom(this->config_fd, (char*)&msg, max_len, flag, (SA*)&client, &len);
+        if(n == 0) {
+            fprintf(stderr, "RECEV 0 BYTE\n");
+            continue;
+        }
+        if(n < 0) {
+            fprintf(stderr, "RECEV ERROR\n");
+            continue;
+        }
+        else {
+            if(msg.type == POLICY_ADD) {
+                char *buf = msg.data;
+
+                for (int i = 0; i < msg.policy_num; ++i) {
+                    Policy *temp = (Policy *) buf;
+                    int32_t policy_len = temp->h.match_len + sizeof(temp->h);
+                    char *data = new char[policy_len];
+                    for (int i = 0; i < policy_len; ++i) {
+                        data[i] = buf[i];
+                    }
+                    Policy *policy = (Policy *) data;
+                    this->policies.push_back(policy);
+                }
+
+                response.policy_num = 0;
+                response.type = POLICY_RESPONSE;
+                response.byte_len = sizeof(PolicyMsg);
+                response.data[0] = 0;
+                response.data[1] = 0;
+                response.data[2] = 0;
+                response.data[3] = 0;
+                ssize_t r = sendto(this->config_fd, (char*)&response, response.byte_len, flag, (SA*)&client, len);
+                if(r <= 0) {
+                    fprintf(stderr, "SEND ERROR\n");
+                }
+            }
+        }
     }
 }
 

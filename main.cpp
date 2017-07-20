@@ -123,6 +123,11 @@ void* read_server(void* argv) {
     }
 }
 
+void* run_config_daemon(void* argv) {
+    PolicyConfig* conf = (PolicyConfig*) argv;
+    conf->listenRequest();
+}
+
 void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
     sockaddr_in server,client,tunnel;
     server.sin_family = client.sin_family = tunnel.sin_family = AF_INET;
@@ -171,6 +176,12 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
 
             fprintf(stderr, "port:%d tunnel connect server ok, sockfd is %d\n",ntohs(client.sin_port), server_fd);
 
+            //start policy config
+            class PolicyConfig* policyConfig = new PolicyConfig();
+            policyConfig->setupConf();
+            pthread_t p_t;
+            pthread_create(&p_t, NULL, &run_config_daemon, (void*)policyConfig);
+
             //start schedule
             Schedule* client_to_server_schedule = new Schedule("CLIENT");
             Schedule* server_to_client_schedule = new Schedule("SERVER");
@@ -178,6 +189,7 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             ScheduleArg arg1, arg2;
             arg1.schedule = client_to_server_schedule;
             arg2.schedule = server_to_client_schedule;
+            arg2.config = arg1.config = policyConfig;
             pthread_create(&s1, NULL, &schedule_thread, (void*)&arg1);
             pthread_create(&s2, NULL, &schedule_thread, (void*)&arg2);
             fprintf(stderr,"port:%d schedule ready\n",ntohs(client.sin_port));
