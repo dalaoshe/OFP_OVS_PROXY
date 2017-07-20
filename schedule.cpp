@@ -7,6 +7,7 @@ using namespace rofl;
 int32_t Schedule::putMessage(char* msg, int32_t len, int32_t fd) {
     int32_t priority = this->getPriority(msg);
     int32_t qid = this->getQueueId(msg);
+    OFP_Msg_Arg arg = this->getOFPMsgArg(msg);
     OFP_Msg* ofp_msg = new OFP_Msg(msg, len, fd, priority);
     ofp_msg->max_wait_time = this->getMaxWaitTime(msg);
     ofp_msg->process_time = this->getProcessTime(msg);
@@ -196,6 +197,93 @@ int32_t Schedule::getMaxWaitTime(char *msg) {
     }
 }
 
+
+uint32_t getMatchLenth(char* match) {
+    uint16_t total_length = ntohs(*(uint16_t*)(match + 2));
+    fprintf(stderr, "%02X %02X, total_len %d",(*((char*)(match + 2))), *((char*)(match+3)), total_length);
+    size_t pad = (0x7 & total_length);
+    /* append padding if not a multiple of 8 */
+    if (pad) {
+        total_length += 8 - pad;
+    }
+    return total_length;
+}
+//todo
+OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
+    OFP_Msg_Arg arg;
+    struct openflow::ofp_header *header =
+            (struct openflow::ofp_header *)(msg);
+    int32_t msg_len = be16toh(header->length);
+    uint32_t xid = header->xid;
+
+    switch (header->type) {
+        case openflow::OFPT_PACKET_IN: {
+            arg.qid = PI_QUEUE_ID;
+            break;
+        }
+        case openflow::OFPT_FLOW_MOD: {
+            arg.qid = FLOW_MOD_QUEUE_ID;
+            break;
+        }
+        case openflow::OFPT_PACKET_OUT: {
+            arg.qid = PO_QUEUE_ID;
+            break;
+        }
+        case openflow::OFPT_STATS_REQUEST: {
+        //    break;
+        }
+        case openflow::OFPT_STATS__REPLY: {
+          //  break;
+        }
+        default: {
+            arg.qid = MSG_QUEUE_ID;
+        }
+    }
+
+    if(header->type == openflow::OFPT_FLOW_MOD) {
+        switch (header->version) {
+            case 4: {
+                struct ofp13_flow_mod *hdr = (struct ofp13_flow_mod *) (msg + sizeof(struct openflow::ofp_header));
+                for(int i = 0; i < 4; ++i) {
+                    fprintf(stderr, "\n\n FLOW_MOD Match len:%02X hsize:%d\n\n", (*((char*)(&(hdr->match))+i)), sizeof(struct openflow::ofp_header));
+                }
+
+                uint16_t total_length = ntohs(*(uint16_t*)(((char*)&(hdr->match)) + 2));
+                //fprintf(stderr, "%02X %02X, total_len %d",(*((char*)(match + 2))), *((char*)(match+3)), total_length);
+                size_t pad = (0x7 & total_length);
+                /* append padding if not a multiple of 8 */
+                if (pad) {
+                    total_length += 8 - pad;
+                }
+
+                size_t match_len = getMatchLenth((char *)( &(hdr->match)));
+                char *match_item = ((char*)&(hdr->match))+ 4;
+                char *ins = (((char *) &(hdr->match)) + match_len);
+                while (match_item < ins - (8 - pad)) {
+                    ofp_match_items* item = (ofp_match_items*)match_item;
+                    fprintf(stderr, "\n\n "
+                            "CLASS:%02X\n"
+                            "FIELD:%02X\n"
+                            "LENGTH:%d\n"
+                            "VALUE:",item->oxm_class, item->oxm_field_id,  item->length );
+                    char *value = (char*)&(item->value);
+                    for(int i = 0; i < item->length; ++i)
+                    fprintf(stderr,"%02X",*(value+i));
+                    fprintf(stderr,"\n");
+                    match_item += 4 + item->length;
+                }
+                fprintf(stderr, "\n\n FLOW_MOD Match len:%lu \n\n", match_len);
+                break;
+            }
+            default: {
+
+            }
+        }
+    }
+
+    return arg;
+}
+
 int32_t PolicyConfig::setupConf() {
     this->config_fd = Socket(AF_INET, SOCK_DGRAM, 0);
     this->server.sin_addr.s_addr = INADDR_ANY;
@@ -255,6 +343,8 @@ int32_t PolicyConfig::listenRequest() {
         }
     }
 }
+
+
 
 bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2) {
     if(t1.max_wait_time <= 0 && t2.max_wait_time > 0) {

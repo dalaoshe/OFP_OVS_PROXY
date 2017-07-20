@@ -88,6 +88,18 @@
 				</MakeCommands>
 			</Target>
 		</Build>
+		<Unit filename="/home/dalaoshe/network_demo/tcp_tunnel/cofmatch.cpp">
+			<Option target="tcp_tunnel"/>
+		</Unit>
+		<Unit filename="/home/dalaoshe/network_demo/tcp_tunnel/cofmatch.h">
+			<Option target="tcp_tunnel"/>
+		</Unit>
+		<Unit filename="/home/dalaoshe/network_demo/tcp_tunnel/coxmatches.cpp">
+			<Option target="tcp_tunnel"/>
+		</Unit>
+		<Unit filename="/home/dalaoshe/network_demo/tcp_tunnel/coxmatches.h">
+			<Option target="tcp_tunnel"/>
+		</Unit>
 		<Unit filename="/home/dalaoshe/network_demo/tcp_tunnel/error_check.cpp">
 			<Option target="tcp_tunnel"/>
 		</Unit>

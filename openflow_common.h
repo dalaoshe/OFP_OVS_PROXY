@@ -1478,4 +1478,50 @@ namespace rofl {
 
 //#include "rofl/common/openflow/openflow_experimental.h"
 
+
+
+/* Fields to match against flows */
+struct ofp_match {
+    uint16_t type;         /* One of OFPMT_* */
+    uint16_t length;       /* Length of ofp_match (excluding padding) */
+    /* Followed by:
+     * - Exactly (length - 4) (possibly 0) bytes containing OXM TLVs, then
+     * - Exactly ((length + 7)/8*8 - length) (between 0 and 7) bytes of
+     * all-zero bytes
+     * In summary, ofp_match is padded as needed, to make its overall size
+     * a multiple of 8, to preserve alignment in structures using it.
+     */
+    uint8_t oxm_fields[0]; /* 0 or more OXM match fields */
+    uint8_t pad[4];        /* Zero bytes - see above for sizing */
+};
+OFP_ASSERT(sizeof(struct ofp_match) == 8);
+
+
+struct ofp_match_items {
+    uint16_t oxm_class;
+    uint8_t oxm_field_id;
+    //uint8_t oxm_has_mask;
+    uint8_t length;
+    uint8_t value[0];
+}__attribute__((packed));
+
+
+struct ofp13_flow_mod {
+    uint64_t cookie;
+    uint64_t cookie_mask;
+    uint8_t table_id;
+    uint8_t command;
+    uint16_t idle_timeout;
+    uint16_t hard_timeout;
+    uint16_t priority;
+    uint32_t buffer_id;
+    uint32_t out_port;
+    uint32_t out_group;
+    uint16_t flags;
+    uint8_t pad[2];
+    uint8_t match[0];
+    // uint8_t instructions[0];
+} __attribute__((packed));
+
+
 #endif /* OPENFLOW_COMMON_H_ */

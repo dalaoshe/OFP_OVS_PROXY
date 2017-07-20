@@ -16,6 +16,13 @@
 
 using namespace std;
 
+struct OFP_Msg_Arg {
+    uint8_t qid;
+    uint8_t priority;
+    int32_t max_wait_time;
+    int32_t process_time;
+};
+
 class OFP_Msg {
 public:
     int32_t len;
@@ -26,6 +33,7 @@ public:
     uint8_t identity;
     uint8_t in_process;
     uint8_t finished;
+    rofl::openflow::ofp_header *header;
     char* buf;
 public:
     OFP_Msg(char* msg, int32_t len, int32_t fd, int32_t priority) {
@@ -43,6 +51,8 @@ public:
         for(int i = 0 ; i < len; ++i) {
             this->buf[i] = msg[i];
         }
+        header = (rofl::openflow::ofp_header *)buf;
+
 
 
     }
@@ -54,8 +64,14 @@ public:
 // if t1 priority < t2
 bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2);
 
+
+//switch to controller
 #define PI_QUEUE_ID 0
-#define MSG_QUEUE_ID 1
+#define MSG_QUEUE_ID 2
+//controller to switch
+#define FLOW_MOD_QUEUE_ID 0
+#define PO_QUEUE_ID 1
+
 
 class Queue {
     pthread_mutex_t queue_mutex;
@@ -145,13 +161,6 @@ public:
     OFP_Msg* fetchMsg() {
         pthread_mutex_lock(&this->queue_mutex);
         OFP_Msg* msg = NULL;
-//        if(!this->msg_queue.empty()) {
-//            msg = msg_queue.front();
-//            msg_queue.pop();
-//        }
-//        else {
-//
-//        }
         uint64_t num = this->msg_queue.size();
         for(uint64_t i = 0; i < num; ++i) {
             if(!this->msg_queue[i]->in_process) {
@@ -236,6 +245,7 @@ public:
     int32_t getQueueId(char* msg);
     int32_t getMaxWaitTime(char* msg);
     int32_t getProcessTime(char* msg);
+    OFP_Msg_Arg getOFPMsgArg(char* msg);
     void setConf(PolicyConfig* conf) {
         this->conf = conf;
     }

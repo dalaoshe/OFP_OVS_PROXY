@@ -123,6 +123,60 @@ tcp_tunnel/fast:
 	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/build
 .PHONY : tcp_tunnel/fast
 
+cofmatch.o: cofmatch.cpp.o
+
+.PHONY : cofmatch.o
+
+# target to build an object file
+cofmatch.cpp.o:
+	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/cofmatch.cpp.o
+.PHONY : cofmatch.cpp.o
+
+cofmatch.i: cofmatch.cpp.i
+
+.PHONY : cofmatch.i
+
+# target to preprocess a source file
+cofmatch.cpp.i:
+	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/cofmatch.cpp.i
+.PHONY : cofmatch.cpp.i
+
+cofmatch.s: cofmatch.cpp.s
+
+.PHONY : cofmatch.s
+
+# target to generate assembly for a file
+cofmatch.cpp.s:
+	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/cofmatch.cpp.s
+.PHONY : cofmatch.cpp.s
+
+coxmatches.o: coxmatches.cpp.o
+
+.PHONY : coxmatches.o
+
+# target to build an object file
+coxmatches.cpp.o:
+	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/coxmatches.cpp.o
+.PHONY : coxmatches.cpp.o
+
+coxmatches.i: coxmatches.cpp.i
+
+.PHONY : coxmatches.i
+
+# target to preprocess a source file
+coxmatches.cpp.i:
+	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/coxmatches.cpp.i
+.PHONY : coxmatches.cpp.i
+
+coxmatches.s: coxmatches.cpp.s
+
+.PHONY : coxmatches.s
+
+# target to generate assembly for a file
+coxmatches.cpp.s:
+	$(MAKE) -f CMakeFiles/tcp_tunnel.dir/build.make CMakeFiles/tcp_tunnel.dir/coxmatches.cpp.s
+.PHONY : coxmatches.cpp.s
+
 error_check.o: error_check.cpp.o
 
 .PHONY : error_check.o
@@ -267,6 +321,12 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... tcp_tunnel"
+	@echo "... cofmatch.o"
+	@echo "... cofmatch.i"
+	@echo "... cofmatch.s"
+	@echo "... coxmatches.o"
+	@echo "... coxmatches.i"
+	@echo "... coxmatches.s"
 	@echo "... error_check.o"
 	@echo "... error_check.i"
 	@echo "... error_check.s"
