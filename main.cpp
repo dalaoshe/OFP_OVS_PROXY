@@ -104,20 +104,6 @@ void* read_server(void* argv) {
             Close(server_fd);
             break;
         } else {
-//            struct openflow::ofp_header *header =
-//                    (struct openflow::ofp_header *)(buf);
-
-//            SetSocket(client_fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
-//            Writev_nByte(client_fd, buf, sn);
-//            SetSocket(client_fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
-//
-//            if(header->type == openflow::OFPT_FLOW_MOD || header->type == openflow::OFPT_PACKET_IN) {
-//                gettimeofday( arg->t_2, NULL );
-//                double ms = (double (arg->t_2->tv_sec-arg->t->tv_sec) * 1000.0) + (double (arg->t_2->tv_usec - arg->t->tv_usec) / 1000.0);
-//                fprintf(stderr, "server:port:%d read %d byte from server by server_fd %d to client_fd %d user:%lf ms\n", port, sn,
-//                        server_fd, client_fd, ms);
-//            }
-
             server_to_client_schedule->putMessage(buf, sn, client_fd);
         }
     }
@@ -126,6 +112,33 @@ void* read_server(void* argv) {
 void* run_config_daemon(void* argv) {
     PolicyConfig* conf = (PolicyConfig*) argv;
     conf->listenRequest();
+
+
+}
+
+struct PipeArg {
+    char* name;
+};
+void* run_listen_resp(void* argv) {
+    PipeArg* arg = (PipeArg*)argv;
+    fprintf(stderr, "\n\nOpen Listen Pipe\n\n");
+    int fd = mkfifo(arg->name, O_RDONLY);
+    if(fd < 0) {
+        fprintf(stderr, "\n\nCreate fifo pipe Error:%s\n\n", strerror(errno));
+        fd = open(arg->name, O_RDONLY | O_NONBLOCK);
+        if(fd < 0) {
+            fprintf(stderr, "\n\nOpen fifo pipe Error:%s\n\n", strerror(errno));
+        }
+    }
+    fprintf(stderr, "\n\nOpen fifo pipe SUCCESS\n\n");
+
+    char buf[1024];
+    int n;
+    while (1) {
+        n = read(fd, buf, 1024);
+        if(n > 0)
+        fprintf(stderr, "\n\nRead %d byte from pipe, content:%s\n\n", n, buf);
+    }
 }
 
 void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
@@ -149,7 +162,13 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
     Listen(listenTunnel, 4);
     fprintf(stderr, "read to listen\n");
 
-
+    //start piplisten
+//    PipeArg* pipeArg = new PipeArg();
+//    pipeArg->name = new char[20];
+//    pthread_t pipe_t;
+//    char pipe_name[] = "/home/dalaoshe/pipe.txt";
+//    strcpy(pipeArg->name, pipe_name);
+//    pthread_create(&pipe_t, NULL, &run_listen_resp, (void*)pipeArg);
 
     while(1) {
         int client_fd =Accept(listenTunnel, (SA*)&client, &len);
@@ -177,14 +196,18 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             fprintf(stderr, "port:%d tunnel connect server ok, sockfd is %d\n",ntohs(client.sin_port), server_fd);
 
             //start policy config
-            class PolicyConfig* policyConfig = new PolicyConfig();
+            PolicyConfig* policyConfig = new PolicyConfig();
             policyConfig->setupConf();
             pthread_t p_t;
             pthread_create(&p_t, NULL, &run_config_daemon, (void*)policyConfig);
 
+
+
+
+
             //start schedule
-            Schedule* client_to_server_schedule = new Schedule("CLIENT");
-            Schedule* server_to_client_schedule = new Schedule("SERVER");
+            Schedule* client_to_server_schedule = new Schedule("CLIENT", "/home/dalaoshe/Client_to_Server_PIPE.txt");
+            Schedule* server_to_client_schedule = new Schedule("SERVER", "/home/dalaoshe/SERVER_to_Client_PIPE.txt");
             pthread_t s1, s2;
             ScheduleArg arg1, arg2;
             arg1.schedule = client_to_server_schedule;

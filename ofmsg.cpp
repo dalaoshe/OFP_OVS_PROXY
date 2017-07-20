@@ -127,9 +127,9 @@ int read_ofp_msg(int fd, char* buf, int32_t port, char* endpoint) {
                       //  printf("time: %d us\n", timeuse);
 
 
-                        fprintf(stderr, "\n\n\n%s:port:%d read PACKET_IN, use time %.2f ms, "
-                                "mes-head-len is :%d, read:%d times, TransactionID:%u \n\n\n",
-                                endpoint, port, ms, be16toh(header->length), count, xid);
+//                        fprintf(stderr, "\n\n\n%s:port:%d read PACKET_IN, use time %.2f ms, "
+//                                "mes-head-len is :%d, read:%d times, TransactionID:%u \n\n\n",
+//                                endpoint, port, ms, be16toh(header->length), count, xid);
                         break;
                     }
                     case rofl::openflow::OFPT_FLOW_MOD: {

@@ -23,14 +23,19 @@ public:
     int32_t fd;
     int32_t max_wait_time;// indicate how long can wait
     int32_t process_time;// indicate processed finished
+    uint8_t identity;
     uint8_t in_process;
+    uint8_t finished;
     char* buf;
 public:
     OFP_Msg(char* msg, int32_t len, int32_t fd, int32_t priority) {
         this->len = len;
         this->priority = priority;
         this->fd = fd;
+        this->identity = 0;
         this->in_process = 0;
+        this->finished = 0;
+
 
         this->buf = new char[len];
         //memset(buf, 0, len);
@@ -81,12 +86,37 @@ public:
             this->msg_queue[i]->max_wait_time --;
             if(this->msg_queue[i]->in_process) {
                 this->msg_queue[i]->process_time --;
+                if(this->msg_queue[i]->process_time < 0) {
+                    this->msg_queue[i]->finished = 1;
+                }
               //  fprintf(stderr, "\n\n need time %d \n\n", this->msg_queue[i]->process_time);
             }
         }
         pthread_mutex_unlock(&this->queue_mutex);
         return 0;
     }
+
+    //every call mark one only
+    int32_t markFinished(uint8_t identify) {
+        pthread_mutex_lock(&this->queue_mutex);
+        uint64_t num = this->msg_queue.size();
+        if(num > 0) {
+            fprintf(stderr, "\n\n identify %u \n\n", identify);
+        }
+        for(uint64_t i = 0; i < num; ++i) {
+            if(this->msg_queue[i]->in_process
+               && !this->msg_queue[i]->finished
+               && this->msg_queue[i]->identity == identify) {
+                this->msg_queue[i]->finished = 1;
+                pthread_mutex_unlock(&this->queue_mutex);
+                return 1;
+                //  fprintf(stderr, "\n\n need time %d \n\n", this->msg_queue[i]->process_time);
+            }
+        }
+        pthread_mutex_unlock(&this->queue_mutex);
+        return 0;
+    }
+
     //pop and get number of finished msgs
     int32_t cleanFinishMsg() {
         pthread_mutex_lock(&this->queue_mutex);
@@ -95,7 +125,7 @@ public:
         for(uint64_t i = 0,index = 0; i < num; ++i,++index) {
             //fprintf(stderr, "\n\n packet need time %d in process %d \n\n", this->msg_queue[index]->process_time, this->msg_queue[index]->in_process);
 
-            if((this->msg_queue[index]->in_process) && (this->msg_queue[index]->process_time < 0)) {
+            if((this->msg_queue[index]->in_process) && (this->msg_queue[index]->finished)) {
                 delete this->msg_queue[index];
                 this->msg_queue.erase(this->msg_queue.begin() + index);
                 --index;
@@ -183,12 +213,15 @@ class Schedule {
     pthread_mutex_t policy_mutex;
     PolicyConfig* conf;
     int32_t queue_num;
+    char resp_pipe[50];
     char name[30];
    // int32_t fd;
 public:
-    Schedule(char* name) {
+    Schedule(char* name, char* pipe_name) {
         policy_mutex = PTHREAD_MUTEX_INITIALIZER;
         strcpy(this->name, name);
+        strcpy(this->resp_pipe, pipe_name);
+        fprintf(stderr, "\nCreate Schedule:%s , pipe:%s\n",this->name, this->resp_pipe);
         this->queue_num = 10;
         for(int i = 0; i < this->queue_num; ++i) {
             Queue* q = new Queue();
@@ -198,7 +231,6 @@ public:
     }
     int32_t putMessage(char* msg, int32_t len, int32_t fd);
     int32_t run();
-    int32_t run2();
     int32_t addPolicy(Policy* policy);
     int32_t getPriority(char* msg);
     int32_t getQueueId(char* msg);
