@@ -21,6 +21,7 @@ struct OFP_Msg_Arg {
     uint8_t priority;
     int32_t max_wait_time;
     int32_t process_time;
+    uint64_t identify;
 };
 
 class OFP_Msg {
@@ -30,7 +31,7 @@ public:
     int32_t fd;
     int32_t max_wait_time;// indicate how long can wait
     int32_t process_time;// indicate processed finished
-    uint8_t identity;
+    uint64_t identity;
     uint8_t in_process;
     uint8_t finished;
     rofl::openflow::ofp_header *header;
@@ -45,13 +46,13 @@ public:
         this->finished = 0;
 
 
-        this->buf = new char[len];
+        //this->buf = new char[len];
         //memset(buf, 0, len);
         this->buf = new char [len];
         for(int i = 0 ; i < len; ++i) {
             this->buf[i] = msg[i];
         }
-        header = (rofl::openflow::ofp_header *)buf;
+        header = (rofl::openflow::ofp_header *)(this->buf);
 
 
 
@@ -67,11 +68,16 @@ bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2);
 
 //switch to controller
 #define PI_QUEUE_ID 0
+#define MULTI_PART_REPLY_QUEUE_ID 1
 #define MSG_QUEUE_ID 2
 //controller to switch
+#define LLDP_QUEUE_ID 0
 #define FLOW_MOD_QUEUE_ID 0
-#define PO_QUEUE_ID 1
+#define MULTI_PART_REQUEST_QUEUE_ID 1
+#define PO_QUEUE_ID 2
 
+#define LLDP_TYPE 0x88cc
+#define ARP 0x806
 
 class Queue {
     pthread_mutex_t queue_mutex;
@@ -103,7 +109,17 @@ public:
             if(this->msg_queue[i]->in_process) {
                 this->msg_queue[i]->process_time --;
                 if(this->msg_queue[i]->process_time < 0) {
-                    this->msg_queue[i]->finished = 1;
+                    if (!(this->msg_queue[i]->header->type == rofl::openflow::OFPT_FLOW_MOD &&
+                          this->msg_queue[i]->identity != 0)
+                            &&
+                        !(this->msg_queue[i]->header->type == rofl::openflow::OFPT_STATS_REQUEST &&
+                          this->msg_queue[i]->identity != 0)
+                            ) {
+                        this->msg_queue[i]->finished = 1;
+                    } else {
+//                        fprintf(stderr, "Read(PACKET_TYPE):%d  cookies:%lu \n",
+//                                this->msg_queue[i]->header->type, this->msg_queue[i]->identity);
+                    }
                 }
               //  fprintf(stderr, "\n\n need time %d \n\n", this->msg_queue[i]->process_time);
             }
@@ -113,20 +129,26 @@ public:
     }
 
     //every call mark one only
-    int32_t markFinished(uint8_t identify) {
+    int32_t markFinished(uint64_t identify) {
         pthread_mutex_lock(&this->queue_mutex);
         uint64_t num = this->msg_queue.size();
         if(num > 0) {
-            fprintf(stderr, "\n\n identify %u \n\n", identify);
+            fprintf(stderr, "\n\nTry Find Identify %lu \n\n", identify);
         }
         for(uint64_t i = 0; i < num; ++i) {
-            if(this->msg_queue[i]->in_process
+            if( this->msg_queue[i]->in_process
                && !this->msg_queue[i]->finished
                && this->msg_queue[i]->identity == identify) {
                 this->msg_queue[i]->finished = 1;
+                fprintf(stderr, "\n\nHas Find Identify:%lu  \n\n", identify);
                 pthread_mutex_unlock(&this->queue_mutex);
                 return 1;
-                //  fprintf(stderr, "\n\n need time %d \n\n", this->msg_queue[i]->process_time);
+                fprintf(stderr, "\n\n need time %d \n\n", this->msg_queue[i]->process_time);
+            }
+            else if(this->msg_queue[i]->header->type == rofl::openflow::OFPT_FLOW_MOD &&
+                    this->msg_queue[i]->identity != 0) {
+                        fprintf(stderr, "Didn find(PACKET_TYPE):%d  cookies:%lu \n",
+                this->msg_queue[i]->header->type, this->msg_queue[i]->identity);
             }
         }
         pthread_mutex_unlock(&this->queue_mutex);
@@ -141,7 +163,7 @@ public:
         for(uint64_t i = 0,index = 0; i < num; ++i,++index) {
             //fprintf(stderr, "\n\n packet need time %d in process %d \n\n", this->msg_queue[index]->process_time, this->msg_queue[index]->in_process);
 
-            if((this->msg_queue[index]->in_process) && (this->msg_queue[index]->finished)) {
+            if((this->msg_queue[index]->in_process) && (this->msg_queue[index]->finished == 1)) {
                 delete this->msg_queue[index];
                 this->msg_queue.erase(this->msg_queue.begin() + index);
                 --index;
@@ -219,6 +241,7 @@ class Schedule {
     Queue pi_queue;
     Queue msg_queue;
     std::vector<Queue*> queues;
+    std::vector<Queue*> *other_queues;
     pthread_mutex_t policy_mutex;
     PolicyConfig* conf;
     int32_t queue_num;
@@ -246,8 +269,17 @@ public:
     int32_t getMaxWaitTime(char* msg);
     int32_t getProcessTime(char* msg);
     OFP_Msg_Arg getOFPMsgArg(char* msg);
+    std::vector<Queue*> *getOtherQueues(){
+        return this->other_queues;
+    }
+    std::vector<Queue*> *getQueues(){
+        return &this->queues;
+    }
     void setConf(PolicyConfig* conf) {
         this->conf = conf;
+    }
+    void setOtherQueue(std::vector<Queue*> *other_queues) {
+        this->other_queues = other_queues;
     }
     ~Schedule() {
 

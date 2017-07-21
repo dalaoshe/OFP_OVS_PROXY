@@ -6,12 +6,14 @@
 using namespace rofl;
 int32_t Schedule::putMessage(char* msg, int32_t len, int32_t fd) {
     int32_t priority = this->getPriority(msg);
-    int32_t qid = this->getQueueId(msg);
+    //int32_t qid = this->getQueueId(msg);
     OFP_Msg_Arg arg = this->getOFPMsgArg(msg);
     OFP_Msg* ofp_msg = new OFP_Msg(msg, len, fd, priority);
+
+    ofp_msg->identity = arg.identify;
     ofp_msg->max_wait_time = this->getMaxWaitTime(msg);
     ofp_msg->process_time = this->getProcessTime(msg);
-    switch(qid) {
+    switch(arg.qid) {
         case PI_QUEUE_ID: {//packet_in
           //  fprintf(stderr, "Client PUT PACKET_IN MSG\n");
             //pi_queue.putMsg(ofp_msg);
@@ -28,7 +30,7 @@ int32_t Schedule::putMessage(char* msg, int32_t len, int32_t fd) {
             break;
         }
     }
-    this->queues[qid]->putMsg(ofp_msg);
+    this->queues[arg.qid]->putMsg(ofp_msg);
 }
 
 struct PipeListenArg {
@@ -55,9 +57,11 @@ void* Run_listen_resp(void* argv) {
     while (1) {
         n = read(fd, buf, 1024);
         if(n > 0) {
-            fprintf(stderr, "\n\nRead %d byte from pipe, content:%s\n\n", n, buf);
+
+
             int q_num = queues->size();
-            uint8_t identify = 0;
+            uint64_t identify = *((uint64_t*)buf);
+            fprintf(stderr, "\n\nRead %d byte from pipe, content:%lu\n\n", n, identify);
             for(int i = 0; i < q_num; ++i) {
                 Queue* q = (*queues)[i];
                 int marked = q->markFinished(identify);
@@ -78,7 +82,7 @@ int32_t Schedule::run() {
     pthread_create(&pipe_t, NULL, &Run_listen_resp, (void*)pipeArg);
 
     int32_t  times = 0;
-    int32_t max_in_process = 1;
+    int32_t max_in_process = 20;
     int on = 1, off = 0;
     while (1) {
         //update queue
@@ -99,10 +103,11 @@ int32_t Schedule::run() {
                 if(msg == NULL) continue;
                 //send msg
                 SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
+                msg->in_process = 1;
                 Writev_nByte(msg->fd, msg->buf, msg->len);
                 SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
                 //mark
-                msg->in_process = 1;
+
                 has_msg = true;
                 //print info
                 struct openflow::ofp_header *header =
@@ -219,6 +224,27 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
     switch (header->type) {
         case openflow::OFPT_PACKET_IN: {
             arg.qid = PI_QUEUE_ID;
+
+            ofp_packet_in* packet_in = (ofp_packet_in*)msg;
+            char* match = (char*)(&packet_in->match);
+
+
+            uint16_t match_total_length = ntohs(packet_in->match.length) ;
+            match_total_length += 4;
+            uint16_t pad_len = 2;
+
+            char* eth_data = match + match_total_length + pad_len;
+            uint16_t *type = (uint16_t*)(eth_data + 12);
+            uint16_t e_type = ntohs(*type);
+            if(e_type == LLDP_TYPE) {
+                arg.qid = LLDP_QUEUE_ID;
+                arg.priority = 0xFF;
+                arg.identify = header->xid;
+                arg.max_wait_time = arg.process_time = 0;
+            } else {
+                arg.qid = PI_QUEUE_ID;
+            }
+            fprintf(stderr, "RECEIVE PI ETH_TYPE:%u match_len:%u\n", e_type, match_total_length);
             break;
         }
         case openflow::OFPT_FLOW_MOD: {
@@ -227,13 +253,36 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
         }
         case openflow::OFPT_PACKET_OUT: {
             arg.qid = PO_QUEUE_ID;
+            ofp_packet_out* packet_out = (ofp_packet_out*)msg;
+            char* action = (char*)(&packet_out->actions);
+            char* eth_data = action + ntohs(packet_out->actions_len);
+            uint16_t *type = (uint16_t*)(eth_data + 12);
+            uint16_t e_type = ntohs(*type);
+            if(e_type == LLDP_TYPE) {
+                arg.qid = LLDP_QUEUE_ID;
+                arg.priority = 0xFF;
+                arg.identify = header->xid;
+                arg.max_wait_time = arg.process_time = 0;
+            } else {
+                arg.qid = PO_QUEUE_ID;
+            }
             break;
         }
         case openflow::OFPT_STATS_REQUEST: {
-        //    break;
+            arg.qid = MULTI_PART_REQUEST_QUEUE_ID;
+            arg.identify = ntohl(header->xid);
+            fprintf(stderr, "RECEIVE FLOW REQUEST COOKIE:%lu \n", arg.identify);
+            break;
         }
         case openflow::OFPT_STATS__REPLY: {
-          //  break;
+            arg.qid = MULTI_PART_REPLY_QUEUE_ID;
+            arg.identify = ntohl(header->xid);
+            fprintf(stderr, "RECEIVE FLOW REPLY COOKIE:%lu \n", arg.identify);
+            //mark request
+            Queue* q = (*this->other_queues)[MULTI_PART_REQUEST_QUEUE_ID];
+            int marked = q->markFinished(arg.identify);
+
+            break;
         }
         default: {
             arg.qid = MSG_QUEUE_ID;
@@ -244,35 +293,28 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
         switch (header->version) {
             case 4: {
                 struct ofp13_flow_mod *hdr = (struct ofp13_flow_mod *) (msg + sizeof(struct openflow::ofp_header));
-                for(int i = 0; i < 4; ++i) {
-                    fprintf(stderr, "\n\n FLOW_MOD Match len:%02X hsize:%d\n\n", (*((char*)(&(hdr->match))+i)), sizeof(struct openflow::ofp_header));
-                }
+                arg.identify = hdr->cookie;
+                fprintf(stderr, "RECEIVE FLOW MOD COOKIE:%lu \n", arg.identify);
 
                 uint16_t total_length = ntohs(*(uint16_t*)(((char*)&(hdr->match)) + 2));
-                //fprintf(stderr, "%02X %02X, total_len %d",(*((char*)(match + 2))), *((char*)(match+3)), total_length);
-                size_t pad = (0x7 & total_length);
-                /* append padding if not a multiple of 8 */
-                if (pad) {
-                    total_length += 8 - pad;
-                }
+                total_length += 4;
 
-                size_t match_len = getMatchLenth((char *)( &(hdr->match)));
                 char *match_item = ((char*)&(hdr->match))+ 4;
-                char *ins = (((char *) &(hdr->match)) + match_len);
-                while (match_item < ins - (8 - pad)) {
-                    ofp_match_items* item = (ofp_match_items*)match_item;
-                    fprintf(stderr, "\n\n "
-                            "CLASS:%02X\n"
-                            "FIELD:%02X\n"
-                            "LENGTH:%d\n"
-                            "VALUE:",item->oxm_class, item->oxm_field_id,  item->length );
-                    char *value = (char*)&(item->value);
-                    for(int i = 0; i < item->length; ++i)
-                    fprintf(stderr,"%02X",*(value+i));
-                    fprintf(stderr,"\n");
-                    match_item += 4 + item->length;
-                }
-                fprintf(stderr, "\n\n FLOW_MOD Match len:%lu \n\n", match_len);
+                char *ins = (((char *) &(hdr->match)) + total_length);
+//                while (match_item < ins - (8 - pad)) {
+//                    ofp_match_items* item = (ofp_match_items*)match_item;
+//                    fprintf(stderr, "\n\n "
+//                            "CLASS:%02X\n"
+//                            "FIELD:%02X\n"
+//                            "LENGTH:%d\n"
+//                            "VALUE:",item->oxm_class, item->oxm_field_id,  item->length );
+//                    char *value = (char*)&(item->value);
+//                    for(int i = 0; i < item->length; ++i)
+//                    fprintf(stderr,"%02X",*(value+i));
+//                    fprintf(stderr,"\n");
+//                    match_item += 4 + item->length;
+//                }
+              //  fprintf(stderr, "\n\n FLOW_MOD Match len:%lu \n\n", match_len);
                 break;
             }
             default: {

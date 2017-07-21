@@ -208,6 +208,9 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             //start schedule
             Schedule* client_to_server_schedule = new Schedule("CLIENT", "/home/dalaoshe/Client_to_Server_PIPE.txt");
             Schedule* server_to_client_schedule = new Schedule("SERVER", "/home/dalaoshe/SERVER_to_Client_PIPE.txt");
+            client_to_server_schedule->setOtherQueue(server_to_client_schedule->getQueues());
+            server_to_client_schedule->setOtherQueue(client_to_server_schedule->getQueues());
+
             pthread_t s1, s2;
             ScheduleArg arg1, arg2;
             arg1.schedule = client_to_server_schedule;

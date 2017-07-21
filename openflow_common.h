@@ -1524,4 +1524,43 @@ struct ofp13_flow_mod {
 } __attribute__((packed));
 
 
+/*op > 1.3*/
+/* Packet received on port (datapath -> controller). */
+struct ofp_packet_in {
+    rofl::openflow::ofp_header header;
+    uint32_t buffer_id;     /* ID assigned by datapath. */
+    uint16_t total_len;     /* Full length of frame. */
+    uint8_t reason;         /* Reason packet is being sent (one of OFPR_*) */
+    uint8_t table_id;       /* ID of the table that was looked up */
+    uint64_t cookie;        /* Cookie of the flow entry that was looked up. */
+    struct ofp_match match; /* Packet metadata. Variable size. */
+    /* Followed by:
+     * - Exactly 2 all-zero padding bytes, then
+     * - An Ethernet frame whose length is inferred from header.length.
+     *   The padding bytes preceding the Ethernet frame ensure that the IP
+     *   header (if any) following the Ethernet header is 32-bit aligned.
+     */
+    // uint8_t pad[2];				/* Align to 64 bit + 16 bit */
+    // uint8_t data[0];				/* Ethernet frame */
+};
+OFP_ASSERT(sizeof(struct ofp_packet_in) == 32);
+
+
+/*op > 1.2*/
+/* Send packet (controller -> datapath). */
+struct ofp_packet_out {
+    rofl::openflow::ofp_header header;
+    uint32_t buffer_id;   /* ID assigned by datapath (-1 if none). */
+    uint32_t in_port;     /* Packet's input port or OFPP_CONTROLLER. */
+    uint16_t actions_len; /* Size of action array in bytes. */
+    uint8_t pad[6];
+    uint8_t actions[0]; /* Action list. */
+    /* uint8_t data[0]; */               /* Packet data.  The length is inferred
+                                                                          from the length
+                                          field in the header.
+                                                                          (Only meaningful if
+                                          buffer_id == -1.) */
+};
+OFP_ASSERT(sizeof(struct ofp_packet_out) == 24);
+
 #endif /* OPENFLOW_COMMON_H_ */
