@@ -191,7 +191,7 @@ public:
                     continue;
                 }
                 else if(lessPriority((*msg) , *(msg_queue[i]))){
-                    msg = msg_queue[i];
+                    msg = this->msg_queue[i];
                 }
             }
         }
@@ -227,10 +227,11 @@ struct PolicyMsg {
 class PolicyConfig {
     sockaddr_in server;
     int32_t config_fd;
+    int16_t server_port;
     std::vector<Policy*> policies;
     pthread_mutex_t policy_mutex = PTHREAD_MUTEX_INITIALIZER;
 public:
-    int32_t setupConf();
+    int32_t setupConf(uint16_t server_port);
     int32_t listenRequest();
     std::vector<Policy*>* getAllPolices() {
         return &(this->policies);
@@ -238,8 +239,6 @@ public:
 };
 
 class Schedule {
-    Queue pi_queue;
-    Queue msg_queue;
     std::vector<Queue*> queues;
     std::vector<Queue*> *other_queues;
     pthread_mutex_t policy_mutex;

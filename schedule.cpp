@@ -73,15 +73,13 @@ void* Run_listen_resp(void* argv) {
 
 int32_t Schedule::run() {
 
-    //start piplisten
+    /* Start Pipelisten Thread To do Resp */
     PipeListenArg* pipeArg = new PipeListenArg();
     pipeArg->name = this->resp_pipe;
     pipeArg->listenQueue = &this->queues;
     pthread_t pipe_t;
-//    strcpy(pipeArg->name, pipe_name);
     pthread_create(&pipe_t, NULL, &Run_listen_resp, (void*)pipeArg);
 
-    int32_t  times = 0;
     int32_t max_in_process = 20;
     int on = 1, off = 0;
     while (1) {
@@ -96,19 +94,15 @@ int32_t Schedule::run() {
 
         while(max_in_process > 0) {
             OFP_Msg* msg = NULL;
-            bool has_msg = false;
             for(int i = 0; i < this->queue_num; ++i) {
                 Queue* q = this->queues[i];
                 msg = q->fetchMsg();
                 if(msg == NULL) continue;
                 //send msg
-                SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
+                //SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
                 msg->in_process = 1;
                 Writev_nByte(msg->fd, msg->buf, msg->len);
-                SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
-                //mark
-
-                has_msg = true;
+                //SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
                 //print info
                 struct openflow::ofp_header *header =
                         (struct openflow::ofp_header *)(msg->buf);
@@ -122,19 +116,13 @@ int32_t Schedule::run() {
                 break;
             }
             //no msg need process
-            if(!has_msg) {
-              //  fprintf(stderr, "\n\n get not msg , PI_QUEUE_SIZE:%d MSG_QUEUE_SIZE:%d \n\n", pi_queue.getSize(), msg_queue.getSize());
+            if(msg == NULL) {
                 break;
             }
             else {
                 max_in_process--;
             }
         }
-        //usleep(100);
-//        times++;
-//        if(pi_queue.getSize() +  msg_queue.getSize() >= 2) {
-//            fprintf(stderr, "\n\n iter:%d , PI_QUEUE_SIZE:%d MSG_QUEUE_SIZE:%d MAX_SIZE:%d\n\n", times, pi_queue.getSize(), msg_queue.getSize(), max_in_process);
-//        }
     }
 }
 
@@ -326,15 +314,17 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
     return arg;
 }
 
-int32_t PolicyConfig::setupConf() {
+int32_t PolicyConfig::setupConf(uint16_t server_port) {
+    this->server_port = server_port;
+
     this->config_fd = Socket(AF_INET, SOCK_DGRAM, 0);
     this->server.sin_addr.s_addr = INADDR_ANY;
-    this->server.sin_port = htons(CONFIG_PORT);
+    this->server.sin_port = htons(server_port);
     this->server.sin_family = AF_INET;
+
     socklen_t len = sizeof(this->server);
     int on = 1;
     SetSocket(this->config_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-    SetSocket(this->config_fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
     Bind_Socket(this->config_fd, (SA*)&this->server, len);
 }
 

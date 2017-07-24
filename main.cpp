@@ -112,8 +112,6 @@ void* read_server(void* argv) {
 void* run_config_daemon(void* argv) {
     PolicyConfig* conf = (PolicyConfig*) argv;
     conf->listenRequest();
-
-
 }
 
 struct PipeArg {
@@ -159,7 +157,7 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
     SetSocket(listenTunnel, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
     Bind_Socket(listenTunnel, (SA*)&tunnel, sizeof(tunnel));
 
-    Listen(listenTunnel, 4);
+    Listen(listenTunnel, 10);
     fprintf(stderr, "read to listen\n");
 
     //start piplisten
@@ -182,11 +180,12 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             continue;
         }
         else {
-
+            /* Child Process             */
 
             int server_fd = Socket(AF_INET, SOCK_STREAM, 0);
             Socket_Peer_Connect(server_fd, (SA*)&server, len);
 
+            /* Forbidden Nagle's algorithm */
             int on = 1;
             SetSocket(server_fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
             SetSocket(client_fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
@@ -195,9 +194,9 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
 
             fprintf(stderr, "port:%d tunnel connect server ok, sockfd is %d\n",ntohs(client.sin_port), server_fd);
 
-            //start policy config
+            /* Start Policy Config Daemon Thread To Receive Policy */
             PolicyConfig* policyConfig = new PolicyConfig();
-            policyConfig->setupConf();
+            policyConfig->setupConf(ntohs(client.sin_port));
             pthread_t p_t;
             pthread_create(&p_t, NULL, &run_config_daemon, (void*)policyConfig);
 
@@ -205,9 +204,10 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
 
 
 
-            //start schedule
+            /* Start Schedule Thread To Process Client_To_Server Msg and Server_To_Client Msg */
             Schedule* client_to_server_schedule = new Schedule("CLIENT", "/home/dalaoshe/Client_to_Server_PIPE.txt");
             Schedule* server_to_client_schedule = new Schedule("SERVER", "/home/dalaoshe/SERVER_to_Client_PIPE.txt");
+
             client_to_server_schedule->setOtherQueue(server_to_client_schedule->getQueues());
             server_to_client_schedule->setOtherQueue(client_to_server_schedule->getQueues());
 
@@ -221,6 +221,7 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             fprintf(stderr,"port:%d schedule ready\n",ntohs(client.sin_port));
 
 
+            /* Start Thread To Receive Msg */
             TunArg tun;
             struct timeval t, t_2;
 
