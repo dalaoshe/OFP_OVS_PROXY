@@ -22,6 +22,7 @@ struct OFP_Msg_Arg {
     int32_t max_wait_time;
     int32_t process_time;
     uint64_t identify;
+    uint16_t len;
 };
 
 class OFP_Msg {
@@ -133,22 +134,22 @@ public:
         pthread_mutex_lock(&this->queue_mutex);
         uint64_t num = this->msg_queue.size();
         if(num > 0) {
-            fprintf(stderr, "\n\nTry Find Identify %lu \n\n", identify);
+           // fprintf(stderr, "\n\nTry Find Identify %lu \n\n", identify);
         }
         for(uint64_t i = 0; i < num; ++i) {
             if( this->msg_queue[i]->in_process
                && !this->msg_queue[i]->finished
                && this->msg_queue[i]->identity == identify) {
                 this->msg_queue[i]->finished = 1;
-                fprintf(stderr, "\n\nHas Find Identify:%lu  \n\n", identify);
+                //fprintf(stderr, "\n\nHas Find Identify:%lu  \n\n", identify);
                 pthread_mutex_unlock(&this->queue_mutex);
                 return 1;
                 fprintf(stderr, "\n\n need time %d \n\n", this->msg_queue[i]->process_time);
             }
             else if(this->msg_queue[i]->header->type == rofl::openflow::OFPT_FLOW_MOD &&
                     this->msg_queue[i]->identity != 0) {
-                        fprintf(stderr, "Didn find(PACKET_TYPE):%d  cookies:%lu \n",
-                this->msg_queue[i]->header->type, this->msg_queue[i]->identity);
+              //          fprintf(stderr, "Didn find(PACKET_TYPE):%d  cookies:%lu \n",
+              //  this->msg_queue[i]->header->type, this->msg_queue[i]->identity);
             }
         }
         pthread_mutex_unlock(&this->queue_mutex);
