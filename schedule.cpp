@@ -202,70 +202,121 @@ uint32_t getMatchLenth(char* match) {
     return total_length;
 }
 
-void pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_t field_id,
-                             char* buf,uint16_t* new_len, uint16_t* except_len) {
+void pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_t field_id, uint8_t value_tag,
+                             char* buf, uint16_t* new_len, uint16_t* except_len,
+                             PolicyConfig* config) {
     uint16_t new_match_length = 0;
     uint16_t old_match_length = ntohs(*(uint16_t*)(match_msg + 2));
 
-//                size_t pad = (0x7 & total_length);
-//                /* append padding if not a multiple of 8 */
-//                if (pad) {
-//                    total_length += 8 - pad;
-//                }
-    uint16_t total_length = old_match_length + 4;
-    uint16_t match_item_len = 0;
-    char* new_match_begin = buf;
-    char* old_match_begin = match_msg;
+    uint16_t total_length = old_match_length;
 
-    char *match_item = (old_match_begin)+ 4;
-    char *new_match_item = (new_match_begin)+ 4;
+    size_t pad = (0x7 & total_length);
+    /* append padding if not a multiple of 8 */
+    if (pad) {
+        total_length += 8 - pad;
+    }
+
+
+
+    uint16_t tick_match_item_len = 0;
+
+    char *match_item = (match_msg)+ 4;
+    char *new_match_item = (buf)+ 4;
+
     char *ins = (match_msg + total_length);
     int con = 0;
     while (match_item < ins - 4) {
         ofp_match_items* item = (ofp_match_items*)match_item;
-        fprintf(stderr, "\n%d\n"
-                "PACK CLASS:%02X\n"
-                "PACK FIELD:%02X\n"
-                "PACK LENGTH:%d\n"
-                "PACK VALUE:",con, item->oxm_class, item->oxm_field_id,  item->length );
         char *value = (char*)&(item->value);
-        for(int i = 0; i < item->length; ++i)
-            fprintf(stderr,"%02X",*(value+i));
-        fprintf(stderr,"\n");
-        match_item += 4 + item->length;
-        con += 1;
+        /* debug: print match item */
+//        fprintf(stderr, "\n%d\n"
+//                "PACK CLASS:%02X\n"
+//                "PACK FIELD:%02X\n"
+//                "PACK LENGTH:%d\n"
+//                "PACK VALUE:",
+//                con, item->oxm_class, item->oxm_field_id,  item->length );
+//        for(int i = 0; i < item->length; ++i)
+//            fprintf(stderr,"%02X",*(value+i));
+//        fprintf(stderr,"\n");
+//        con += 1;
 
-        if(ntohs(item->oxm_class) == ofpxmc_id && item->oxm_field_id == field_id) {
+        match_item += 4 + item->length;
+
+        /* found special match item, do process*/
+        if(ntohs(item->oxm_class) == ofpxmc_id && item->oxm_field_id == field_id && *(uint8_t*)value == value_tag) {
+            /* debug: print tick match item */
+            char *value = (char*)&(item->value);
             fprintf(stderr, "\n%d\n"
                     "TICK CLASS:%02X\n"
                     "TICK FIELD:%02X\n"
                     "TICK LENGTH:%d\n"
-                    "TICK VALUE:",con, item->oxm_class, item->oxm_field_id,  item->length );
-            char *value = (char*)&(item->value);
+                    "TICK VALUE:",
+                    con, item->oxm_class, item->oxm_field_id,  item->length );
             for(int i = 0; i < item->length; ++i)
                 fprintf(stderr,"%02X",*(value+i));
             fprintf(stderr,"\n");
-            match_item_len += 4 + item->length;
+
+            /* update policy */
+            Policy::policy_id pid;
+            pid.app_id = *((uint8_t*)value + 1);
+            pid.user_id = *((uint8_t*)value + 2);
+            if(config->hasPolicy(pid)) {
+                /* debug: print this policy info */
+                Policy* policy = config->getPolicy(pid);
+                fprintf(stderr,"Has Save This Policy:<%02X, %02X>\nVALUE:",*(policy->value), *(policy->value+1) );
+                for(int i = 0; i < item->length; ++i)
+                    fprintf(stderr,"%02X",*(policy->value+i));
+                fprintf(stderr,"\n");
+
+                /* update policy */
+                config->updatePolicy(pid, (uint8_t*)value);
+
+            }
+            else {
+                Policy* policy = new Policy(item->length, (uint8_t*)value);
+                policy->oxm_class = item->oxm_class;
+                policy->oxm_field_id = item->oxm_field_id;
+                policy->p_id = pid;
+                config->addPolicy(pid, policy);
+            }
+
+            tick_match_item_len += 4 + item->length;
+
             continue;
         }
-        /* copy */
+
+        /* copy to buf*/
         ofp_match_items* new_item = (ofp_match_items*)new_match_item;
         new_item->oxm_class = item->oxm_class;
         new_item->oxm_field_id = item->oxm_field_id;
         new_item->length = item->length;
-        //new_item->value = item->value;
         char *new_value = (char*)&(new_item->value);
         for(int i = 0; i < new_item->length; ++i)
             *(new_value+i) = *(value+i);
         new_match_item += 4 + new_item->length;
-            //fprintf(stderr,"%02X",*(value+i));
-
     }
-    new_match_length = total_length - match_item_len;
+
+    /* update new match length segment */
+    new_match_length = total_length - tick_match_item_len;
     *(uint16_t*)buf = *(uint16_t*)match_msg;
-    *(uint16_t*)(buf + 2) = htons(new_match_length - 4);
-    fprintf(stderr, "old len:%u new len:%u \n", total_length, new_match_length);
-    *except_len = match_item_len;
+
+    uint16_t old_pad = 0;
+    if(pad) {
+        new_match_length -= (8 - pad);
+        old_pad = (8 - pad);
+    }
+    *(uint16_t*)(buf + 2) = htons(new_match_length);
+//    fprintf(stderr, "Old Match len:%u New Math len:%u \n", old_match_length , new_match_length);
+
+    /* firgure new padding */
+    pad = (0x7 & new_match_length);
+    if (pad) {
+        new_match_length += 8 - pad;
+        tick_match_item_len -=  ((8 - pad) - old_pad);
+    }
+    /* the byte num be removed */
+    *except_len = (tick_match_item_len);
+    /* the new mathe total len */
     *new_len = new_match_length;
 }
 
@@ -350,41 +401,49 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
             case 4: {
                 struct ofp13_flow_mod *hdr = (struct ofp13_flow_mod *) (msg + sizeof(struct openflow::ofp_header));
                 arg.identify = hdr->cookie;
-              //  fprintf(stderr, "RECEIVE FLOW MOD COOKIE:%lu \n", arg.identify);
+                //fprintf(stderr, "RECEIVE FLOW MOD COOKIE:%lu \n", arg.identify);
 
                 uint16_t total_length = ntohs(*(uint16_t*)(((char*)&(hdr->match)) + 2));
-                total_length += 4;
-                fprintf(stderr, "\nold match len:%u \n", total_length);
+                size_t pad = (0x7 & total_length);
+                /* append padding if not a multiple of 8 */
+                if (pad) {
+                    total_length += 8 - pad;
+                }
 
+                /* debug: print old match content */
+                fprintf(stderr, "\nOld match len:%u \n", total_length);
                 char *match_item = ((char*)&(hdr->match))+ 4;
                 bool has_inst = ntohs(header->length) - sizeof(struct openflow::ofp_header) - sizeof(struct ofp13_flow_mod) - total_length >= 2;
                 char *ins = (((char *) &(hdr->match)) + total_length);
                 int con  = 0;
-                while (match_item < ins - 4) {
+                while (match_item < ins - (8 - pad)) {
                     ofp_match_items* item = (ofp_match_items*)match_item;
-                    fprintf(stderr, "\n%d\n"
-                            "CLASS:%02X\n"
-                            "FIELD:%02X\n"
-                            "LENGTH:%d\n"
-                            "VALUE:",con, item->oxm_class, item->oxm_field_id,  item->length );
                     char *value = (char*)&(item->value);
+                    fprintf(stderr, "\n%d\n"
+                            "OLD CLASS:%02X\n"
+                            "OLD FIELD:%02X\n"
+                            "OLD LENGTH:%d\n"
+                            "OLD VALUE:",
+                            con, item->oxm_class, item->oxm_field_id,  item->length );
                     for(int i = 0; i < item->length; ++i)
                     fprintf(stderr,"%02X",*(value+i));
                     fprintf(stderr,"\n");
                     con += 1;
+
                     match_item += 4 + item->length;
                 }
 
+                /* copy true match item to buf */
                 char* buf = new char[total_length];
                 memset(buf, 0, total_length);
                 uint16_t new_len = 0, except_len = 0;
-                pack_mathch_except_type(((char*)&(hdr->match)), 0, 0, buf, &new_len, &except_len);
+                pack_mathch_except_type(((char*)&(hdr->match)), 0x8000, 0x36, 0x7F, buf, &new_len, &except_len, this->conf);
                 header->length = htons(ntohs(header->length) - except_len);
-                /* copy new len */
+                /* copy buf match to msg*/
                 for(int i = 0; i < new_len; ++i) {
                     *(((char*)&(hdr->match)) + i) = buf[i];
                 }
-                /* copy instruction */
+                /* copy instruction to valid place*/
                 if(has_inst) {
                     uint16_t inst_len = ntohs(*((uint16_t*)(ins+2)));
                     for (int i = 0; i < inst_len; ++i) {
@@ -393,36 +452,43 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
                     fprintf(stderr, "\n\ninst len:%u \n\n", inst_len);
                 }
 
-                /* after copy */
-                total_length = ntohs(*(uint16_t*)(buf + 2));
+                /* debug: print after copy match content*/
+//                total_length = ntohs(*(uint16_t*)(buf + 2));
+//                total_length += 4;
+//                fprintf(stderr, "\nnew match len:%u \n", total_length);
+//                match_item = buf+ 4;
+//                ins = (buf + total_length);
+//                con = 0;
+//                while (match_item < ins - 4) {
+//                    ofp_match_items* item = (ofp_match_items*)match_item;
+//                    char *value = (char*)&(item->value);
+//                    fprintf(stderr, "\n%d\n"
+//                            "NEW CLASS:%02X\n"
+//                            "NEW FIELD:%02X\n"
+//                            "NEW LENGTH:%d\n"
+//                            "NEW VALUE:",
+//                            con, item->oxm_class, item->oxm_field_id,  item->length );
+//                    for(int i = 0; i < item->length; ++i)
+//                        fprintf(stderr,"%02X",*(value+i));
+//                    fprintf(stderr,"\n");
+//                    con += 1;
+//                    match_item += 4 + item->length;
+//                }
 
 
-                total_length += 4;
-                fprintf(stderr, "\nnew match len:%u \n", total_length);
-                match_item = buf+ 4;
-                ins = (buf + total_length);
-                con = 0;
-                while (match_item < ins - 4) {
-                    ofp_match_items* item = (ofp_match_items*)match_item;
-                    fprintf(stderr, "\n%d\n"
-                            "NEW CLASS:%02X\n"
-                            "NEW FIELD:%02X\n"
-                            "NEW LENGTH:%d\n"
-                            "NEW VALUE:",con, item->oxm_class, item->oxm_field_id,  item->length );
-                    char *value = (char*)&(item->value);
-                    for(int i = 0; i < item->length; ++i)
-                        fprintf(stderr,"%02X",*(value+i));
-                    fprintf(stderr,"\n");
-                    con += 1;
-                    match_item += 4 + item->length;
-                }
-                fprintf(stderr, "pay load\n");
-                for(int i = 0; i < ntohs(header->length); ++i) {
-                    fprintf(stderr,"%02X ",*(msg+i));
-                    if((i+1) % 16 == 0) fprintf(stderr, "\n");
-                }
-                fprintf(stderr, "\n");
-                fprintf(stderr, "\n\n len:%u \n\n", ntohs(header->length));
+                /* debug: print pay load and total len*/
+//                fprintf(stderr, "Now Pay load\n");
+//                for(int i = 0; i < ntohs(header->length); ++i) {
+//                    fprintf(stderr,"%02X ",*(msg+i));
+//                    if((i+1) % 16 == 0) fprintf(stderr, "\n");
+//                }
+//                fprintf(stderr, "\n");
+//
+//                fprintf(stderr, "\n\nNow Header Len:%u \n\n", ntohs(header->length));
+
+                /* release buf */
+                delete buf;
+
                 break;
             }
             default: {
@@ -471,13 +537,13 @@ int32_t PolicyConfig::listenRequest() {
 
                 for (int i = 0; i < msg.policy_num; ++i) {
                     Policy *temp = (Policy *) buf;
-                    int32_t policy_len = temp->h.match_len + sizeof(temp->h);
-                    char *data = new char[policy_len];
-                    for (int i = 0; i < policy_len; ++i) {
-                        data[i] = buf[i];
-                    }
-                    Policy *policy = (Policy *) data;
-                    this->policies.push_back(policy);
+//                    int32_t policy_len = temp->h.match_len + sizeof(temp->h);
+//                    char *data = new char[policy_len];
+//                    for (int i = 0; i < policy_len; ++i) {
+//                        data[i] = buf[i];
+//                    }
+//                    Policy *policy = (Policy *) data;
+//                    this->policies.push_back(policy);
                 }
 
                 response.policy_num = 0;

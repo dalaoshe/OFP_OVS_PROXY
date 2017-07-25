@@ -13,6 +13,7 @@
 #include <vector>
 #include <cstdio>
 #include <pthread.h>
+#include <map>
 
 using namespace std;
 
@@ -208,13 +209,35 @@ public:
 #define MAX_MATCH_LEN 256
 #define POLICY_ADD 0
 #define POLICY_RESPONSE 1
-struct Policy {
-    struct hdr{
-        int32_t match_len;
-        int32_t priority;
-    }h;
-    char match[MAX_MATCH_LEN];
+
+struct Policy{
+    uint16_t oxm_class;
+    uint8_t oxm_field_id;//TLV TYPE
+    //uint8_t oxm_has_mask;
+    uint8_t length;//TLV L
+    uint8_t* value;//TLV value
+
+    struct policy_id{
+        uint8_t app_id;
+        uint8_t user_id;
+        bool operator < (const policy_id& id) const {
+            return app_id < id.app_id || (app_id == id.app_id && user_id < id.user_id);
+        }
+    }p_id;
+    uint8_t priority;
+
+    Policy(uint8_t length, uint8_t* value) {
+        this->value = new uint8_t[length];
+        this->length = length;
+        for(int i = 0; i < length; ++i) {
+            this->value[i] = value[i];
+        }
+    }
+    ~Policy() {
+        delete value;
+    }
 };
+
 
 #define MAX_POLICY_MSG_DATA 1024
 struct PolicyMsg {
@@ -229,13 +252,31 @@ class PolicyConfig {
     sockaddr_in server;
     int32_t config_fd;
     int16_t server_port;
-    std::vector<Policy*> policies;
+    std::map<Policy::policy_id , Policy*> policies;
     pthread_mutex_t policy_mutex = PTHREAD_MUTEX_INITIALIZER;
 public:
     int32_t setupConf(uint16_t server_port);
     int32_t listenRequest();
-    std::vector<Policy*>* getAllPolices() {
+    std::map<Policy::policy_id , Policy*>* getAllPolices() {
         return &(this->policies);
+    }
+    void updatePolicy(Policy::policy_id pid,  uint8_t* value) {
+
+    }
+    bool hasPolicy(Policy::policy_id pid) {
+        std::map<Policy::policy_id , Policy*>::iterator iter;
+        iter = this->policies.find(pid);
+        if(iter != this->policies.end()) return 1;
+        return 0;
+    }
+    int addPolicy(Policy::policy_id pid, Policy* policy) {
+        this->policies.insert(std::pair<Policy::policy_id , Policy*>(pid, policy));
+    }
+    Policy* getPolicy(Policy::policy_id pid) {
+        std::map<Policy::policy_id , Policy*>::iterator iter;
+        iter = this->policies.find(pid);
+        if(iter != this->policies.end()) return iter->second;
+        return NULL;
     }
 };
 
