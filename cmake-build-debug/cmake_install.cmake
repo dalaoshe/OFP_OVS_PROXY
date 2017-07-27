@@ -1,4 +1,4 @@
-# Install script for directory: /home/dalaoshe/OFP_OVS_PROXY
+# Install script for directory: /home/dalaoshe/network_demo/tcp_tunnel
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -40,5 +40,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/dalaoshe/OFP_OVS_PROXY/cmake-build-debug/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/dalaoshe/network_demo/tcp_tunnel/cmake-build-debug/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

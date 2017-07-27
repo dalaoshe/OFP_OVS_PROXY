@@ -1,2 +1,1 @@
-Options: 
-CMake: 3.8.2@/home/dalaoshe/clion-2017.2/bin/cmake/bin/cmake
+CMake: 3.6.2@/home/dalaoshe/clion-2016.3.1/bin/cmake/bin/cmake
