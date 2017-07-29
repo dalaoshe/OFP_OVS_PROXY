@@ -24,6 +24,7 @@ struct OFP_Msg_Arg {
     int32_t process_time;
     uint64_t identify;
     uint16_t len;
+
 };
 
 class OFP_Msg {
@@ -36,6 +37,7 @@ public:
     uint64_t identity;
     uint8_t in_process;
     uint8_t finished;
+    timeval recv,send, end;
     rofl::openflow::ofp_header *header;
     char* buf;
 public:
@@ -46,7 +48,7 @@ public:
         this->identity = 0;
         this->in_process = 0;
         this->finished = 0;
-
+        gettimeofday(&recv, NULL);
 
         //this->buf = new char[len];
         //memset(buf, 0, len);
@@ -288,13 +290,27 @@ class Schedule {
     int32_t queue_num;
     char resp_pipe[50];
     char name[30];
+    bool get_dp_id;
+    bool is_listen_resp;
+    char dp_id;
    // int32_t fd;
 public:
+    void setDpid(char dp_id) {
+        this->dp_id = dp_id;
+        uint32_t lens = strlen(this->resp_pipe);
+        this->resp_pipe[lens] = this->dp_id;
+        this->resp_pipe[lens+1] = 0;
+
+    }
+    void setGet_dp_id(bool get) { this->get_dp_id = get; }
+    Schedule* other;
     Schedule(char* name, char* pipe_name) {
         policy_mutex = PTHREAD_MUTEX_INITIALIZER;
+        this->get_dp_id = this->is_listen_resp = 0;
+        this->dp_id = 0;
         strcpy(this->name, name);
         strcpy(this->resp_pipe, pipe_name);
-        fprintf(stderr, "\nCreate Schedule:%s , pipe:%s\n",this->name, this->resp_pipe);
+        //fprintf(stderr, "\nCreate Schedule:%s , pipe:%s\n",this->name, this->resp_pipe);
         this->queue_num = 10;
         for(int i = 0; i < this->queue_num; ++i) {
             Queue* q = new Queue();

@@ -32,19 +32,19 @@ function pg() {
 	DATA=a.txt
     	
     pgset "rem_device_all"
-    pgset "add_device h4s1-eth0"
+    pgset "add_device h1-eth0"
     pgset "max_before_softirq 10000"
     
     # Configure the individual devices
     echo "Configuring devices"
     
-    PGDEV=/proc/net/pktgen/h4s1-eth0
+    PGDEV=/proc/net/pktgen/h1-eth0
     
     pgset "clone_skb 0"
     pgset "pkt_size 60"
-    pgset "src_mac 00:00:00:00:00:04"
-    pgset "src_min 10.0.0.4"
-    pgset "src_max 10.0.0.4"
+    pgset "src_mac 00:00:00:00:00:01"
+    pgset "src_min 10.0.0.1"
+    pgset "src_max 10.0.0.1"
     pgset "dst_min 10.0.0.3"
     pgset "dst_min 10.0.0.3"
 pgset "udp_src_min 60"    
@@ -60,9 +60,9 @@ pgset "udp_dst_max 6555"
     SPEED=2
     echo "Running... ctrl^C to stop"
     for (( i=1; i<10000; i++ ));do
-	PGDEV=/proc/net/pktgen/h4s1-eth0
+	PGDEV=/proc/net/pktgen/h1-eth0
 	
-	SPEED=`expr 1000`
+	SPEED=`expr 5000`
 #+ $SPEED`
 	DELAY=`expr ${BASIC_DELAY} / $SPEED`
 	PPS=`expr ${SPEED} \* ${BASIC_SPEED}`
@@ -81,7 +81,7 @@ pgset "udp_dst_max 6555"
 	echo ${PPS} >> $DATA
 	pgset "start"
 	
-	CONTENT=`cat /proc/net/pktgen/h4s1-eth0`
+	CONTENT=`cat /proc/net/pktgen/h1-eth0`
 	echo $CONTENT
 
 	#echo 'sleep ${BLOCK_TIME}s'

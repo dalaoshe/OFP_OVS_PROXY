@@ -41,7 +41,7 @@ void* Run_listen_resp(void* argv) {
     PipeListenArg* arg = (PipeListenArg*)argv;
     std::vector<Queue*>* queues = arg->listenQueue;
 
-    fprintf(stderr, "\n\nOpen Listen Pipe\n\n");
+    fprintf(stderr, "\n\nOpen Listen Pipe :%s\n\n", arg->name);
     int fd = mkfifo(arg->name, O_RDONLY);
     if(fd < 0) {
         fprintf(stderr, "\n\nCreate fifo pipe Error:%s\n\n", strerror(errno));
@@ -75,15 +75,22 @@ int32_t Schedule::run() {
 
     /* Start Pipelisten Thread To do Resp */
     PipeListenArg* pipeArg = new PipeListenArg();
-    pipeArg->name = this->resp_pipe;
+
     pipeArg->listenQueue = &this->queues;
     pthread_t pipe_t;
-    pthread_create(&pipe_t, NULL, &Run_listen_resp, (void*)pipeArg);
+    //pthread_create(&pipe_t, NULL, &Run_listen_resp, (void*)pipeArg);
 
-    int32_t max_in_process = 20;
+    int32_t max_in_process = 10;
     int on = 1, off = 0;
     while (1) {
         //update queue
+        if(this->get_dp_id && !this->is_listen_resp) {
+            pipeArg->name = this->resp_pipe;
+            pthread_create(&pipe_t, NULL, &Run_listen_resp, (void*)pipeArg);
+            this->is_listen_resp = 1;
+        }
+
+
         int32_t clean_num = 0;
         for(int i = 0; i < this->queue_num; ++i) {
             Queue *q = this->queues[i];
@@ -101,6 +108,7 @@ int32_t Schedule::run() {
                 //send msg
                 //SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
                 msg->in_process = 1;
+                gettimeofday(&msg->send, NULL);
                 Writev_nByte(msg->fd, msg->buf, msg->len);
                 //SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
                 //print info
@@ -245,16 +253,16 @@ void pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_t field_
         /* found special match item, do process*/
         if(ntohs(item->oxm_class) == ofpxmc_id && item->oxm_field_id == field_id && *(uint8_t*)value == value_tag) {
             /* debug: print tick match item */
-            char *value = (char*)&(item->value);
-            fprintf(stderr, "\n%d\n"
-                    "TICK CLASS:%02X\n"
-                    "TICK FIELD:%02X\n"
-                    "TICK LENGTH:%d\n"
-                    "TICK VALUE:",
-                    con, item->oxm_class, item->oxm_field_id,  item->length );
-            for(int i = 0; i < item->length; ++i)
-                fprintf(stderr,"%02X",*(value+i));
-            fprintf(stderr,"\n");
+//            char *value = (char*)&(item->value);
+//            fprintf(stderr, "\n%d\n"
+//                    "TICK CLASS:%02X\n"
+//                    "TICK FIELD:%02X\n"
+//                    "TICK LENGTH:%d\n"
+//                    "TICK VALUE:",
+//                    con, item->oxm_class, item->oxm_field_id,  item->length );
+//            for(int i = 0; i < item->length; ++i)
+//                fprintf(stderr,"%02X",*(value+i));
+//            fprintf(stderr,"\n");
 
             /* update policy */
             Policy::policy_id pid;
@@ -262,11 +270,11 @@ void pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_t field_
             pid.user_id = *((uint8_t*)value + 2);
             if(config->hasPolicy(pid)) {
                 /* debug: print this policy info */
-                Policy* policy = config->getPolicy(pid);
-                fprintf(stderr,"Has Save This Policy:<%02X, %02X>\nVALUE:",*(policy->value), *(policy->value+1) );
-                for(int i = 0; i < item->length; ++i)
-                    fprintf(stderr,"%02X",*(policy->value+i));
-                fprintf(stderr,"\n");
+//                Policy* policy = config->getPolicy(pid);
+//                fprintf(stderr,"Has Save This Policy:<%02X, %02X>\nVALUE:",*(policy->value), *(policy->value+1) );
+//                for(int i = 0; i < item->length; ++i)
+//                    fprintf(stderr,"%02X",*(policy->value+i));
+//                fprintf(stderr,"\n");
 
                 /* update policy */
                 config->updatePolicy(pid, (uint8_t*)value);
@@ -351,7 +359,7 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
             } else {
                 arg.qid = PI_QUEUE_ID;
             }
-            fprintf(stderr, "RECEIVE PI ETH_TYPE:%u match_len:%u\n", e_type, match_total_length);
+            //fprintf(stderr, "RECEIVE PI ETH_TYPE:%u match_len:%u\n", e_type, match_total_length);
             break;
         }
         case openflow::OFPT_FLOW_MOD: {
@@ -365,6 +373,7 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
             char* eth_data = action + ntohs(packet_out->actions_len);
             uint16_t *type = (uint16_t*)(eth_data + 12);
             uint16_t e_type = ntohs(*type);
+
             if(e_type == LLDP_TYPE) {
                 arg.qid = LLDP_QUEUE_ID;
                 arg.priority = 0xFF;
@@ -391,6 +400,19 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
 
             break;
         }
+        case openflow::OFPT_FEATURES_REPLY: {
+
+            char dpid= (*(msg + sizeof(struct openflow::ofp_header) + 7)) + 48;
+            this->dp_id = dpid;
+            this->get_dp_id = 1;
+            uint32_t lens = strlen(this->resp_pipe);
+            this->resp_pipe[lens] = this->dp_id;
+            this->resp_pipe[lens+1] = 0;
+
+
+            this->other->setDpid(this->dp_id);
+            this->other->setGet_dp_id(1);
+        }
         default: {
             arg.qid = MSG_QUEUE_ID;
         }
@@ -415,23 +437,23 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
                 char *match_item = ((char*)&(hdr->match))+ 4;
                 bool has_inst = ntohs(header->length) - sizeof(struct openflow::ofp_header) - sizeof(struct ofp13_flow_mod) - total_length >= 2;
                 char *ins = (((char *) &(hdr->match)) + total_length);
-                int con  = 0;
-                while (match_item < ins - (8 - pad)) {
-                    ofp_match_items* item = (ofp_match_items*)match_item;
-                    char *value = (char*)&(item->value);
-                    fprintf(stderr, "\n%d\n"
-                            "OLD CLASS:%02X\n"
-                            "OLD FIELD:%02X\n"
-                            "OLD LENGTH:%d\n"
-                            "OLD VALUE:",
-                            con, item->oxm_class, item->oxm_field_id,  item->length );
-                    for(int i = 0; i < item->length; ++i)
-                    fprintf(stderr,"%02X",*(value+i));
-                    fprintf(stderr,"\n");
-                    con += 1;
-
-                    match_item += 4 + item->length;
-                }
+//                int con  = 0;
+//                while (match_item < ins - (8 - pad)) {
+//                    ofp_match_items* item = (ofp_match_items*)match_item;
+//                    char *value = (char*)&(item->value);
+//                    fprintf(stderr, "\n%d\n"
+//                            "OLD CLASS:%02X\n"
+//                            "OLD FIELD:%02X\n"
+//                            "OLD LENGTH:%d\n"
+//                            "OLD VALUE:",
+//                            con, item->oxm_class, item->oxm_field_id,  item->length );
+//                    for(int i = 0; i < item->length; ++i)
+//                    fprintf(stderr,"%02X",*(value+i));
+//                    fprintf(stderr,"\n");
+//                    con += 1;
+//
+//                    match_item += 4 + item->length;
+//                }
 
                 /* copy true match item to buf */
                 char* buf = new char[total_length];

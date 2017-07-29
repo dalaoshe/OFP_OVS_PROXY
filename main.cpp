@@ -113,31 +113,6 @@ void* run_config_daemon(void* argv) {
     conf->listenRequest();
 }
 
-struct PipeArg {
-    char* name;
-};
-void* run_listen_resp(void* argv) {
-    PipeArg* arg = (PipeArg*)argv;
-    fprintf(stderr, "\n\nOpen Listen Pipe\n\n");
-    int fd = mkfifo(arg->name, O_RDONLY);
-    if(fd < 0) {
-        fprintf(stderr, "\n\nCreate fifo pipe Error:%s\n\n", strerror(errno));
-        fd = open(arg->name, O_RDONLY | O_NONBLOCK);
-        if(fd < 0) {
-            fprintf(stderr, "\n\nOpen fifo pipe Error:%s\n\n", strerror(errno));
-        }
-    }
-    fprintf(stderr, "\n\nOpen fifo pipe SUCCESS\n\n");
-
-    char buf[1024];
-    int n;
-    while (1) {
-        n = read(fd, buf, 1024);
-        if(n > 0)
-        fprintf(stderr, "\n\nRead %d byte from pipe, content:%s\n\n", n, buf);
-    }
-}
-
 void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
     sockaddr_in server,client,tunnel;
     server.sin_family = client.sin_family = tunnel.sin_family = AF_INET;
@@ -159,13 +134,6 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
     Listen(listenTunnel, 10);
     fprintf(stderr, "read to listen\n");
 
-    //start piplisten
-//    PipeArg* pipeArg = new PipeArg();
-//    pipeArg->name = new char[20];
-//    pthread_t pipe_t;
-//    char pipe_name[] = "/home/dalaoshe/pipe.txt";
-//    strcpy(pipeArg->name, pipe_name);
-//    pthread_create(&pipe_t, NULL, &run_listen_resp, (void*)pipeArg);
 
     while(1) {
         int client_fd =Accept(listenTunnel, (SA*)&client, &len);
@@ -206,6 +174,8 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             /* Start Schedule Thread To Process Client_To_Server Msg and Server_To_Client Msg */
             Schedule* client_to_server_schedule = new Schedule("CLIENT", "/home/dalaoshe/Client_to_Server_PIPE.txt");
             Schedule* server_to_client_schedule = new Schedule("SERVER", "/home/dalaoshe/SERVER_to_Client_PIPE.txt");
+            client_to_server_schedule->other = server_to_client_schedule;
+            server_to_client_schedule->other = client_to_server_schedule;
 
             client_to_server_schedule->setOtherQueue(server_to_client_schedule->getQueues());
             server_to_client_schedule->setOtherQueue(client_to_server_schedule->getQueues());
