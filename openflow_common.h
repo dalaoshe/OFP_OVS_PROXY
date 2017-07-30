@@ -1564,4 +1564,228 @@ struct ofp_packet_out {
 };
 OFP_ASSERT(sizeof(struct ofp_packet_out) == 24);
 
+/*
+ * 7.2.4 Flow Instruction Structures
+ */
+
+enum ofp_instruction_type {
+    OFPIT_GOTO_TABLE = 1,       /* Setup the next table in the lookup
+                                                             pipeline */
+    OFPIT_WRITE_METADATA = 2,   /* Setup the metadata field for use later in
+                                                             pipeline */
+    OFPIT_WRITE_ACTIONS = 3,    /* Write the action(s) onto the datapath action
+                                                             set */
+    OFPIT_APPLY_ACTIONS = 4,    /* Applies the action(s) immediately */
+    OFPIT_CLEAR_ACTIONS = 5,    /* Clears all actions from the datapath
+                                                             action set */
+    OFPIT_METER = 6,            /* Apply meter (rate limiter) */
+    OFPIT_EXPERIMENTER = 0xFFFF /* Experimenter instruction */
+};
+
+/* Instruction header that is common to all instructions. The length includes
+ * the header and any padding used to make the instruction 64-bit aligned.
+ * NB: The length of an instruction *must* always be a multiple of eight. */
+struct ofp_instruction {
+    uint16_t type; /* Instruction type */
+    uint16_t len;  /* Length of this struct in bytes. */
+};
+OFP_ASSERT(sizeof(struct ofp_instruction) == 4);
+
+/* Instruction structure for OFPIT_GOTO_TABLE */
+struct ofp_instruction_goto_table {
+    uint16_t type;    /* OFPIT_GOTO_TABLE */
+    uint16_t len;     /* Length of this struct in bytes. */
+    uint8_t table_id; /* Set next table in the lookup pipeline */
+    uint8_t pad[3];   /* Pad to 64 bits. */
+};
+OFP_ASSERT(sizeof(struct ofp_instruction_goto_table) == 8);
+
+/* Instruction structure for OFPIT_WRITE_METADATA */
+struct ofp_instruction_write_metadata {
+    uint16_t type;          /* OFPIT_WRITE_METADATA */
+    uint16_t len;           /* Length of this struct in bytes. */
+    uint8_t pad[4];         /* Align to 64-bits */
+    uint64_t metadata;      /* Metadata value to write */
+    uint64_t metadata_mask; /* Metadata write bitmask */
+};
+OFP_ASSERT(sizeof(struct ofp_instruction_write_metadata) == 24);
+
+/* Action header that is common to all actions.  The length includes the
+ * header and any padding used to make the action 64-bit aligned.
+ * NB: The length of an action *must* always be a multiple of eight. */
+struct ofp_action_header {
+    uint16_t type; /* One of OFPAT_*. */
+    uint16_t len;  /* Length of action, including this
+                    header.  This is the length of action,
+                    including any padding to make it
+                    64-bit aligned. */
+    uint8_t pad[4];
+};
+OFP_ASSERT(sizeof(struct ofp_action_header) == 8);
+
+/* Instruction structure for OFPIT_WRITE/APPLY/CLEAR_ACTIONS */
+struct ofp_instruction_actions {
+    uint16_t type;  /* One of OFPIT_*_ACTIONS */
+    uint16_t len;   /* Length of this struct in bytes. */
+    uint8_t pad[4]; /* Align to 64-bits */
+    struct ofp_action_header actions
+    [0]; /* Actions associated with
+                                                      OFPIT_WRITE_ACTIONS and
+                                                      OFPIT_APPLY_ACTIONS */
+};
+OFP_ASSERT(sizeof(struct ofp_instruction_actions) == 8);
+
+/* Instruction structure for OFPIT_METER */
+struct ofp_instruction_meter {
+    uint16_t type;     /* OFPIT_METER */
+    uint16_t len;      /* Length is 8. */
+    uint32_t meter_id; /* Meter instance. */
+};
+OFP_ASSERT(sizeof(struct ofp_instruction_meter) == 8);
+
+/* Instruction structure for experimental instructions */
+struct ofp_instruction_experimenter {
+    uint16_t type;         /* OFPIT_EXPERIMENTER */
+    uint16_t len;          /* Length of this struct in bytes */
+    uint32_t experimenter; /* Experimenter ID:
+                                                      * - MSB 0: low-order bytes
+                          * are IEEE OUI.
+                                                      * - MSB != 0: defined by
+                          * OpenFlow
+                                                      *   consortium. */
+    uint8_t body[0];
+    /* Experimenter-defined arbitrary additional data. */
+};
+OFP_ASSERT(sizeof(struct ofp_instruction_experimenter) == 8);
+
+/*
+ * 7.2.5. Action Structures
+ */
+
+enum ofp_action_type {
+    OFPAT_OUTPUT = 0, /* Output to switch port. */
+    OFPAT_COPY_TTL_OUT =
+    11, /* Copy TTL "outwards" -- from next-to-outermost to outermost */
+    OFPAT_COPY_TTL_IN =
+    12, /* Copy TTL "inwards" -- from outermost to next-to-outermost */
+    OFPAT_SET_MPLS_TTL = 15, /* MPLS TTL */
+    OFPAT_DEC_MPLS_TTL = 16, /* Decrement MPLS TTL */
+    OFPAT_PUSH_VLAN = 17,    /* Push a new VLAN tag */
+    OFPAT_POP_VLAN = 18,     /* Pop the outer VLAN tag */
+    OFPAT_PUSH_MPLS = 19,    /* Push a new MPLS tag */
+    OFPAT_POP_MPLS = 20,     /* Pop the outer MPLS tag */
+    OFPAT_SET_QUEUE = 21,    /* Set queue id when outputting to a port */
+    OFPAT_GROUP = 22,        /* Apply group. */
+    OFPAT_SET_NW_TTL = 23,   /* IP TTL. */
+    OFPAT_DEC_NW_TTL = 24,   /* Decrement IP TTL. */
+    OFPAT_SET_FIELD = 25,    /* Set a header field using OXM TLV format. */
+    OFPAT_PUSH_PBB = 26,     /* Push a new PBB service tag (I-TAG) */
+    OFPAT_POP_PBB = 27,      /* Pop the outer PBB service tag (I-TAG) */
+    OFPAT_EXPERIMENTER = 0xffff
+};
+
+/* Action structure for OFPAT_OUTPUT, which sends packets out 'port'.
+ * When the 'port' is the OFPP_CONTROLLER, 'max_len' indicates the max
+ * number of bytes to send.  A 'max_len' of zero means no bytes of the
+ * packet should be sent.*/
+struct ofp_action_output {
+    uint16_t type;    /* OFPAT_OUTPUT. */
+    uint16_t len;     /* Length is 16. */
+    uint32_t port;    /* Output port. */
+    uint16_t max_len; /* Max length to send to controller. */
+    uint8_t pad[6];   /* Pad to 64 bits. */
+};
+OFP_ASSERT(sizeof(struct ofp_action_output) == 16);
+
+
+enum ofp_controller_max_len {
+    OFPCML_MAX = 0xffe5, /* maximum max_len value which can be used to request a
+                          specific byte length. */
+    OFPCML_NO_BUFFER = 0xffff, /* indicates that no buffering should be
+                                                           applied and the whole
+                                packet is to be
+                                                           sent to the
+                                controller. */
+};
+
+/* Action structure for OFPAT_GROUP. */
+struct ofp_action_group {
+    uint16_t type;     /* OFPAT_GROUP. */
+    uint16_t len;      /* Length is 8. */
+    uint32_t group_id; /* Group identifier. */
+};
+OFP_ASSERT(sizeof(struct ofp_action_group) == 8);
+
+/* OFPAT_SET_QUEUE action struct: send packets to given queue on port. */
+struct ofp_action_set_queue {
+    uint16_t type;     /* OFPAT_SET_QUEUE. */
+    uint16_t len;      /* Len is 8. */
+    uint32_t queue_id; /* Queue id for the packets. */
+};
+OFP_ASSERT(sizeof(struct ofp_action_set_queue) == 8);
+
+/* Action structure for OFPAT_SET_MPLS_TTL. */
+struct ofp_action_mpls_ttl {
+    uint16_t type;    /* OFPAT_SET_MPLS_TTL. */
+    uint16_t len;     /* Length is 8. */
+    uint8_t mpls_ttl; /* MPLS TTL */
+    uint8_t pad[3];
+};
+OFP_ASSERT(sizeof(struct ofp_action_mpls_ttl) == 8);
+
+/* Action structure for OFPAT_SET_NW_TTL. */
+struct ofp_action_nw_ttl {
+    uint16_t type;  /* OFPAT_SET_NW_TTL. */
+    uint16_t len;   /* Length is 8. */
+    uint8_t nw_ttl; /* IP TTL */
+    uint8_t pad[3];
+};
+OFP_ASSERT(sizeof(struct ofp_action_nw_ttl) == 8);
+
+/* Action structure for OFPAT_PUSH_VLAN/MPLS. */
+struct ofp_action_push {
+    uint16_t type;      /* OFPAT_PUSH_VLAN/MPLS. */
+    uint16_t len;       /* Length is 8. */
+    uint16_t ethertype; /* Ethertype */
+    uint8_t pad[2];
+};
+OFP_ASSERT(sizeof(struct ofp_action_push) == 8);
+
+/* Action structure for OFPAT_POP_MPLS. */
+struct ofp_action_pop_mpls {
+    uint16_t type;      /* OFPAT_POP_MPLS. */
+    uint16_t len;       /* Length is 8. */
+    uint16_t ethertype; /* Ethertype */
+    uint8_t pad[2];
+};
+OFP_ASSERT(sizeof(struct ofp_action_pop_mpls) == 8);
+
+/* Action structure for OFPAT_SET_FIELD. */
+struct ofp_action_set_field {
+    uint16_t type;    /* OFPAT_SET_FIELD. */
+    uint16_t len;     /* Length is padded to 64 bits. */
+    /* Followed by:
+     * - Exactly oxm_len bytes containing a single OXM TLV, then
+     * - Exactly ((oxm_len + 4) + 7)/8*8 - (oxm_len + 4) (between 0 and 7)
+     *   bytes of all-zero bytes
+     */
+    uint8_t field[4]; /* OXM TLV - Make compiler happy */
+};
+OFP_ASSERT(sizeof(struct ofp_action_set_field) == 8);
+
+/* Action header for OFPAT_EXPERIMENTER.
+ * The rest of the body is experimenter-defined. */
+struct ofp_action_experimenter_header {
+    uint16_t type; /* OFPAT_EXPERIMENTER. */
+    uint16_t len;  /* Length is a multiple of 8. */
+    uint32_t
+            experimenter; /* Experimenter ID which takes the same
+                                                       form as in struct
+                                                       ofp_experimenter_header.
+                       */
+    // uint32_t exp_type;
+    uint8_t data[0];
+};
+OFP_ASSERT(sizeof(struct ofp_action_experimenter_header) == 8);
+
 #endif /* OPENFLOW_COMMON_H_ */

@@ -19,7 +19,7 @@ using namespace std;
 
 struct OFP_Msg_Arg {
     uint8_t qid;
-    uint8_t priority;
+    double_t priority;
     int32_t max_wait_time;
     int32_t process_time;
     uint64_t identify;
@@ -30,26 +30,27 @@ struct OFP_Msg_Arg {
 
 class OFP_Msg {
 public:
-    int32_t len;
-    int32_t priority;
-    int32_t fd;
-    int32_t max_wait_time;// indicate how long can wait
-    int32_t process_time;// indicate processed finished
-    uint64_t identity;
-    Split::UEPID uepid;
-    uint8_t in_process;
-    uint8_t finished;
-    timeval recv, send, end;
-    uint8_t ofp_type;
+    int32_t len; /* Valid Payload Len To Sent */
+    double_t priority /* Priority */;
+    int32_t fd; /* The FD To Write */
+    int32_t max_wait_time;/* indicate how long can wait */
+    int32_t process_time;/* indicate processed finished */
+    uint64_t identity;/* Identity To Receive From SW */
+    Split::UEPID uepid;/* UEP To Get Priority */
+    uint8_t in_process;/* Has Sent But Not Be Finished */
+    uint8_t finished;/* Sent And Finished Wait To Clean */
+    timeval recv, send, end;/* timestamp */
+    uint8_t ofp_type;/* OFP Type */
+    uint8_t read_to_be_sent;/* Be Ready To Be Sent */
     rofl::openflow::ofp_header *header;
-    char* buf;
+    char* buf;/* Payload */
 public:
-    OFP_Msg(char* msg, int32_t len, int32_t fd, int32_t priority) {
+    OFP_Msg(char* msg, int32_t len, int32_t fd, double_t priority) {
         this->len = len;
         this->priority = priority;
         this->fd = fd;
         this->identity = 0;
-
+        this->read_to_be_sent = 1;
         this->uepid.eid = 0;
         this->uepid.uid = 0;
 
@@ -72,7 +73,6 @@ public:
     ~OFP_Msg() {
         delete this->buf;
     }
-//    bool operator < (const OFP_Msg &t1, const OFP_Msg &t2);
 };
 // if t1 priority < t2
 bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2);
@@ -103,13 +103,23 @@ public:
         pthread_mutex_unlock(&this->queue_mutex);
         return temp;
     }
-    int32_t putMsg(OFP_Msg* msg) {
+    int64_t putMsg(OFP_Msg* msg) {
         pthread_mutex_lock(&this->queue_mutex);
         this->msg_queue.push_back(msg);
-        this->size ++;
+        int64_t index = this->msg_queue.size() - 1;
         pthread_mutex_unlock(&this->queue_mutex);
-        return 0;
+        return index;
     }
+    bool msgNeedNoTime(OFP_Msg* msg) {
+        bool need_no_time = (!(msg->header->type == rofl::openflow::OFPT_FLOW_MOD &&
+          msg->identity != 0)
+        &&
+        !(msg->header->type == rofl::openflow::OFPT_STATS_REQUEST &&
+          msg->identity != 0));
+        return need_no_time;
+
+    }
+
     int32_t decMsgTime() {
         pthread_mutex_lock(&this->queue_mutex);
         uint64_t num = this->msg_queue.size();
@@ -117,17 +127,13 @@ public:
 //            fprintf(stderr, "\n\n dec time %u \n\n", num);
 //        }
         for(uint64_t i = 0; i < num; ++i) {
-            this->msg_queue[i]->max_wait_time --;
-            if(this->msg_queue[i]->in_process) {
-                this->msg_queue[i]->process_time --;
-                if(this->msg_queue[i]->process_time < 0) {
-                    if (!(this->msg_queue[i]->header->type == rofl::openflow::OFPT_FLOW_MOD &&
-                          this->msg_queue[i]->identity != 0)
-                            &&
-                        !(this->msg_queue[i]->header->type == rofl::openflow::OFPT_STATS_REQUEST &&
-                          this->msg_queue[i]->identity != 0)
-                            ) {
-                        this->msg_queue[i]->finished = 1;
+            OFP_Msg* msg = this->msg_queue[i];
+            msg->max_wait_time --;
+            if(msg->in_process) {
+                msg->process_time --;
+                if(msg->process_time < 0) {
+                    if (this->msgNeedNoTime(msg)) {
+                        msg->finished = 1;
                     } else {
 //                        fprintf(stderr, "Read(PACKET_TYPE):%d  cookies:%lu \n",
 //                                this->msg_queue[i]->header->type, this->msg_queue[i]->identity);
@@ -163,6 +169,35 @@ public:
               //          fprintf(stderr, "Didn find(PACKET_TYPE):%d  cookies:%lu \n",
               //  this->msg_queue[i]->header->type, this->msg_queue[i]->identity);
             }
+        }
+        pthread_mutex_unlock(&this->queue_mutex);
+        return 0;
+    }
+
+    int32_t markFinished(uint64_t identify, int64_t pos) {
+        pthread_mutex_lock(&this->queue_mutex);
+        uint64_t num = this->msg_queue.size();
+        if(pos > num || pos < 0) {
+            pthread_mutex_unlock(&this->queue_mutex);
+            return 1;
+        }
+        if(num > 0) {
+          //  fprintf(stderr, "\n\nTry Find Identify %lu \n\n", identify);
+        }
+        OFP_Msg* msg = this->msg_queue[pos];
+        if( msg->in_process
+            && msg->finished
+            && msg->identity == identify) {
+            msg->finished = 1;
+            gettimeofday(&msg->end, NULL);
+           // fprintf(stderr, "\n\nHas Find Identify:%lu  \n\n", identify);
+            pthread_mutex_unlock(&this->queue_mutex);
+            return 1;
+        }
+        else if(msg->header->type == rofl::openflow::OFPT_FLOW_MOD &&
+                msg->identity != 0) {
+          //            fprintf(stderr, "Didn find(PACKET_TYPE):%d  cookies:%lu \n",
+          //  msg->header->type, msg->identity);
         }
         pthread_mutex_unlock(&this->queue_mutex);
         return 0;
@@ -207,7 +242,7 @@ public:
         OFP_Msg* msg = NULL;
         uint64_t num = this->msg_queue.size();
         for(uint64_t i = 0; i < num; ++i) {
-            if(!this->msg_queue[i]->in_process) {
+            if(!this->msg_queue[i]->in_process && this->msg_queue[i]->read_to_be_sent) {
                 if(msg == NULL)  {
                     msg = this->msg_queue[i];
                     continue;
@@ -229,6 +264,13 @@ public:
 #define MAX_MATCH_LEN 256
 #define POLICY_ADD 0
 #define POLICY_RESPONSE 1
+
+struct UEP_Msg{
+    Split::UEPID uepid;
+    uint16_t window = 0;
+    uint16_t number = 1;
+
+}__attribute__((packed));
 
 struct Policy{
     uint16_t oxm_class;
@@ -273,9 +315,23 @@ class PolicyConfig {
     int32_t config_fd;
     int16_t server_port;
     std::map<Policy::policy_id , Policy*> policies;
+    PriorityManager *priorityManager;
     pthread_mutex_t policy_mutex = PTHREAD_MUTEX_INITIALIZER;
 public:
     int32_t setupConf(uint16_t server_port);
+    void initListenSocket() {
+        this->config_fd = Socket(AF_INET, SOCK_DGRAM, 0);
+        this->server.sin_addr.s_addr = INADDR_ANY;
+        this->server.sin_port = htons(server_port);
+        this->server.sin_family = AF_INET;
+        socklen_t len = sizeof(this->server);
+        int on = 1;
+        SetSocket(this->config_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+        Bind_Socket(this->config_fd, (SA*)&this->server, len);
+    }
+    void initPriorityManager() {
+        this->priorityManager = new PriorityManager(5, 20);
+    }
     int32_t listenRequest();
     std::map<Policy::policy_id , Policy*>* getAllPolices() {
         return &(this->policies);
@@ -292,6 +348,8 @@ public:
     int addPolicy(Policy::policy_id pid, Policy* policy) {
         this->policies.insert(std::pair<Policy::policy_id , Policy*>(pid, policy));
     }
+    PriorityManager* getPriorityManager() { return this->priorityManager; }
+
     Policy* getPolicy(Policy::policy_id pid) {
         std::map<Policy::policy_id , Policy*>::iterator iter;
         iter = this->policies.find(pid);
@@ -300,19 +358,38 @@ public:
     }
 };
 
+struct MsgPos{
+    int8_t qid;
+    int64_t pid;
+    MsgPos() {
+        qid = -1;
+        pid = -1;
+    }
+    MsgPos(int8_t qid, int64_t pid) {
+        this->qid = qid;
+        this->pid = pid;
+    }
+    bool validPos() {
+        return qid != -1 && pid != -1;
+    }
+};
+
 class Schedule {
     std::vector<Queue*> queues;
     std::vector<Queue*> *other_queues;
+    std::map<uint64_t , MsgPos> pos_map;
     pthread_mutex_t policy_mutex;
     PolicyConfig* conf;
     int32_t queue_num;
     FILE* mark_result_fd;
+
     char resp_pipe[50];
     char name[30];
     char resp_record_name[50];
     bool get_dp_id;
     bool is_listen_resp;
     char dp_id;
+
    // int32_t fd;
 public:
     void setDpid(char dp_id) {
@@ -320,7 +397,6 @@ public:
         uint32_t lens = strlen(this->resp_pipe);
         this->resp_pipe[lens] = this->dp_id;
         this->resp_pipe[lens+1] = 0;
-
     }
     void setGet_dp_id(bool get) { this->get_dp_id = get; }
     Schedule* other;
@@ -374,5 +450,5 @@ struct ScheduleArg{
     //int32_t* server_fd;
 };
 void* schedule_thread(void* argv) ;
-
+std::string getOFPMsgType(uint8_t ofp_type);
 #endif //TCP_TUNNEL_SCHEDULE_H

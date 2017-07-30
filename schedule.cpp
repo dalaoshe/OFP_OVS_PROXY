@@ -15,23 +15,28 @@ int32_t Schedule::putMessage(char* msg, int32_t len, int32_t fd) {
     ofp_msg->priority = arg.priority;
     ofp_msg->max_wait_time = arg.max_wait_time;
     ofp_msg->process_time = arg.process_time;
-
-    this->queues[arg.qid]->putMsg(ofp_msg);
+    int64_t pid = this->queues[arg.qid]->putMsg(ofp_msg);
+    MsgPos pos = MsgPos(arg.qid, pid);
+    this->pos_map.insert(std::pair<uint64_t , MsgPos>(ofp_msg->identity, pos));
+    ofp_msg->read_to_be_sent = 1;
+    //fprintf(stderr, "UEP:[%02X,%02X] Msg_Type:%s Priority:%lf Identify:%lu \n",arg.uepid.eid, arg.uepid.uid, getOFPMsgType(ofp_msg->ofp_type).c_str() , arg.priority, arg.identify);
 }
 
 struct PipeListenArg {
     char* name;
     std::vector<Queue*>* listenQueue;
+    std::map<uint64_t , MsgPos>* pos_map;
 };
 void* Run_listen_resp(void* argv) {
     PipeListenArg* arg = (PipeListenArg*)argv;
     std::vector<Queue*>* queues = arg->listenQueue;
-
+    std::map<uint64_t , MsgPos>* pos_map = arg->pos_map;
     fprintf(stderr, "\n\nOpen Listen Pipe :%s\n\n", arg->name);
     int fd = mkfifo(arg->name, O_RDONLY);
     if(fd < 0) {
         fprintf(stderr, "\n\nCreate fifo pipe Error:%s\n\n", strerror(errno));
         fd = open(arg->name, O_RDONLY | O_NONBLOCK);
+        //fd = open(arg->name, O_RDONLY);
         if(fd < 0) {
             fprintf(stderr, "\n\nOpen fifo pipe Error:%s\n\n", strerror(errno));
         }
@@ -39,21 +44,32 @@ void* Run_listen_resp(void* argv) {
     fprintf(stderr, "\n\nOpen fifo pipe SUCCESS\n\n");
 
     char buf[1024];
-    int n;
+    int n = 0;
     while (1) {
-        n = read(fd, buf, 1024);
-        if(n > 0) {
+        n = read(fd, buf, sizeof(uint64_t));
+        while(n > 0) {
 
-
-            int q_num = queues->size();
             uint64_t identify = *((uint64_t*)buf);
-           // fprintf(stderr, "\n\nRead %d byte from pipe, content:%lu\n\n", n, identify);
-            for(int i = 0; i < q_num; ++i) {
-                Queue* q = (*queues)[i];
-                int marked = q->markFinished(identify);
-                if(marked )break;
+//            fprintf(stderr, "\n\nRead %d byte from pipe, content:%lu\n\n", n, identify);
+
+            MsgPos pos = (*pos_map)[identify];
+            //fprintf(stderr, "\n\nRead %d byte from pipe, content:%lu Pos:[%d,%ld]\n\n", n, identify, pos.qid, pos.pid);
+            int marked = (*queues)[pos.qid] ->markFinished(identify, pos.pid);
+
+            if(!marked) {
+                int q_num = queues->size();
+                for(int i = 0; i < q_num; ++i) {
+                    Queue* q = (*queues)[i];
+                    int marked = q->markFinished(identify);
+                    if(marked)break;
+                }
             }
+
+            n = read(fd, buf, sizeof(uint64_t));
         }
+        //fprintf(stderr, "READ PIPE\n");
+        /* Avoid No Need CPU */
+        usleep(10000);
     }
 }
 
@@ -63,6 +79,7 @@ int32_t Schedule::run() {
     PipeListenArg* pipeArg = new PipeListenArg();
 
     pipeArg->listenQueue = &this->queues;
+    pipeArg->pos_map = &this->pos_map;
     pthread_t pipe_t;
     //pthread_create(&pipe_t, NULL, &Run_listen_resp, (void*)pipeArg);
 
@@ -81,7 +98,7 @@ int32_t Schedule::run() {
         int32_t clean_num = 0;
         for(int i = 0; i < this->queue_num; ++i) {
             Queue *q = this->queues[i];
-            q->decMsgTime();
+            //q->decMsgTime();
             clean_num += q->cleanFinishMsg(this->mark_result_fd);
         }
         max_in_process += clean_num;
@@ -98,16 +115,16 @@ int32_t Schedule::run() {
                 gettimeofday(&msg->send, NULL);
                 Writev_nByte(msg->fd, msg->buf, msg->len);
                 //SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
-
+                if(q->msgNeedNoTime(msg)) msg->finished = 1;
                 /* Debug: print info */
-                struct openflow::ofp_header *header =
-                        (struct openflow::ofp_header *)(msg->buf);
-                if(!(header->type == openflow::OFPT_PACKET_IN)) {
-                   // fprintf(stderr, "%s:Read(OTHER_MSG,TYPE:%d) %d byte SEND to server_fd %d \n",this->name, header->type, msg->len, msg->fd);
-                }
-                else if(header->type == openflow::OFPT_PACKET_IN) {
-                   // fprintf(stderr, "%s:Read(PACKET_IN) %d byte SEND to server_fd %d \n",this->name, msg->len, msg->fd);
-                }
+//                struct openflow::ofp_header *header =
+//                        (struct openflow::ofp_header *)(msg->buf);
+//                if(!(header->type == openflow::OFPT_PACKET_IN)) {
+//                    fprintf(stderr, "%s:Read(OTHER_MSG,TYPE:%d) %d byte SEND to server_fd %d \n",this->name, header->type, msg->len, msg->fd);
+//                }
+//                else if(header->type == openflow::OFPT_PACKET_IN) {
+//                    fprintf(stderr, "%s:Read(PACKET_IN) %d byte SEND to server_fd %d \n",this->name, msg->len, msg->fd);
+//                }
 
                 break;
             }
@@ -134,7 +151,6 @@ void*  schedule_thread(void* argv)  {
 
 uint16_t getMatchLenth(char* match) {
     uint16_t total_length = ntohs(*(uint16_t*)(match + 2));
-    //fprintf(stderr, "%02X %02X, total_len %d",(*((char*)(match + 2))), *((char*)(match+3)), total_length);
     uint16_t pad = (0x7 & total_length);
     /* append padding if not a multiple of 8 */
     if (pad) {
@@ -143,10 +159,11 @@ uint16_t getMatchLenth(char* match) {
     return total_length;
 }
 
-Split::UEPID pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_t field_id, uint8_t value_tag,
-                             char* buf, uint16_t* new_len, uint16_t* except_len,
-                             PolicyConfig* config) {
-    Split::UEPID uepid;
+UEP_Msg pack_mathch_except_type(char* match_msg,
+                                uint16_t ofpxmc_id, uint8_t field_id, uint8_t value_tag,
+                                char* buf, uint16_t* new_len, uint16_t* except_len,
+                                PolicyConfig* config) {
+    UEP_Msg uep;
     uint16_t new_match_length = 0;
     uint16_t old_match_length = ntohs(*(uint16_t*)(match_msg + 2));
 
@@ -188,42 +205,25 @@ Split::UEPID pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_
         if(ntohs(item->oxm_class) == ofpxmc_id && item->oxm_field_id == field_id && *(uint8_t*)value == value_tag) {
             /* debug: print tick match item */
             char *value = (char*)&(item->value);
-            fprintf(stderr, "\n%d\n"
-                    "TICK CLASS:%02X\n"
-                    "TICK FIELD:%02X\n"
-                    "TICK LENGTH:%d\n"
-                    "TICK VALUE:",
-                    con, item->oxm_class, item->oxm_field_id,  item->length );
-            for(int i = 0; i < item->length; ++i)
-                fprintf(stderr,"%02X",*(value+i));
-            fprintf(stderr,"\n");
+//            fprintf(stderr, "\n%d\n"
+//                    "TICK CLASS:%02X\n"
+//                    "TICK FIELD:%02X\n"
+//                    "TICK LENGTH:%d\n"
+//                    "TICK VALUE:",
+//                    con, item->oxm_class, item->oxm_field_id,  item->length );
+//            for(int i = 0; i < item->length; ++i)
+//                fprintf(stderr,"%02X",*(value+i));
+//            fprintf(stderr,"\n");
 
-            /* update policy */
-            Policy::policy_id pid;
-            pid.app_id = *((uint8_t*)value + 1);
-            pid.user_id = *((uint8_t*)value + 2);
+            /* Update Uep */
+            UEP_Msg* uep_msg = (UEP_Msg*)value;
+            uep.uepid.eid = uep_msg->uepid.eid;
+            uep.uepid.uid = uep_msg->uepid.uid;
+            uep.window = uep_msg->window;
+            uep.number = uep_msg->number;
+            config->getPriorityManager()->updateSplitOfUEP(uep_msg->window, uep.uepid, uep_msg->number);
+            //fprintf(stderr, "UEP:[%02X,%02X] WindowID:%u AddNumber:%u\n",uep.uepid.eid, uep.uepid.uid, uep.window, uep.number);
 
-            uepid.eid = pid.app_id;
-            uepid.uid = pid.user_id;
-            if(config->hasPolicy(pid)) {
-                /* debug: print this policy info */
-//                Policy* policy = config->getPolicy(pid);
-//                fprintf(stderr,"Has Save This Policy:<%02X, %02X>\nVALUE:",*(policy->value), *(policy->value+1) );
-//                for(int i = 0; i < item->length; ++i)
-//                    fprintf(stderr,"%02X",*(policy->value+i));
-//                fprintf(stderr,"\n");
-
-                /* update policy */
-                config->updatePolicy(pid, (uint8_t*)value);
-
-            }
-            else {
-                Policy* policy = new Policy(item->length, (uint8_t*)value);
-                policy->oxm_class = item->oxm_class;
-                policy->oxm_field_id = item->oxm_field_id;
-                policy->p_id = pid;
-                config->addPolicy(pid, policy);
-            }
 
             tick_match_item_len += 4 + item->length;
 
@@ -264,11 +264,142 @@ Split::UEPID pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_
     /* the new mathe total len */
     *new_len = new_match_length;
 
-    return uepid;
+    return uep;
+}
+
+UEP_Msg pack_Inst_except_type(char* inst_msg,
+                                uint16_t filter_inst_type, uint16_t filter_action_type, uint8_t value_tag,
+                                char* new_action_list_buf, uint16_t* new_inst_len, uint16_t* kick_len,
+                                PolicyConfig* config) {
+    UEP_Msg uep;
+
+    ofp_instruction* ofp_inst = (ofp_instruction*)inst_msg;
+    uint16_t original_inst_lens = ntohs(ofp_inst->len);
+    uint16_t original_action_list_lens = original_inst_lens;
+
+    if(ofp_inst->type != filter_inst_type) {
+        fprintf(stderr,"INST TYPE %02x %02x\n",ofp_inst->type, filter_inst_type);
+        return uep;
+    }
+
+    char* original_action_start = 0;
+    switch (htons(ofp_inst->type)) {
+        case OFPIT_GOTO_TABLE: {
+            ofp_instruction_goto_table* goto_table_inst = (ofp_instruction_goto_table*)inst_msg;
+            original_action_start = (char*)&(goto_table_inst->pad);
+            original_action_list_lens = 0;
+            break;
+        }
+        case OFPIT_WRITE_METADATA: {
+            ofp_instruction_write_metadata* write_metadata_inst = (ofp_instruction_write_metadata*)inst_msg;
+            original_action_start = (char*)&(write_metadata_inst->metadata);
+            original_action_list_lens = 0;
+            break;
+        }
+        case OFPIT_WRITE_ACTIONS:
+        case OFPIT_APPLY_ACTIONS:
+        case OFPIT_CLEAR_ACTIONS:{
+            ofp_instruction_actions* apply_inst = (ofp_instruction_actions*)inst_msg;
+            original_action_start = (char*)&(apply_inst->actions);
+            original_action_list_lens -= 8;
+            break;
+        }
+
+        case OFPIT_METER: {
+            ofp_instruction_meter* meter_inst = (ofp_instruction_meter*)inst_msg;
+            original_action_start = (char*)&(meter_inst->meter_id);
+            original_action_list_lens = 0;
+            break;
+        }            /* Apply meter (rate limiter) */
+        case OFPIT_EXPERIMENTER: {
+            ofp_instruction_experimenter* experimenter_inst = (ofp_instruction_experimenter*)inst_msg;
+            original_action_start = (char*)&(experimenter_inst->body);
+            original_action_list_lens -= 8;
+            break;
+        }
+        default:{
+
+        }
+    }
+
+
+    char* original_action_end = inst_msg + original_action_list_lens;
+    char* new_action_start = new_action_list_buf;
+
+    uint16_t filter_lens = 0;
+
+    int con = 1;
+    while (original_action_start < original_action_end) {
+        ofp_action_header* action_header = (ofp_action_header*)original_action_start;
+        uint16_t action_type = action_header->type;
+        uint16_t action_item_len = ntohs(action_header->len);
+        char* action_item_value = (char*)&(action_header->pad);
+        original_action_start += action_item_len;
+
+
+        /* debug: print match item */
+//        fprintf(stderr, "\n%d len:%d\n"
+//                "INST PACK ACTION TYPE:%02X\n"
+//                "INST PACK LENGTH:%d\n"
+//                "INST PACK VALUE:",
+//                con,original_action_end-original_action_start, action_type, action_item_len);
+//        for(int i = 0; i < action_item_len - 4; ++i)
+//            fprintf(stderr,"%02X ",*(action_item_value+i));
+//        fprintf(stderr,"\n");
+//        con += 1;
+
+
+
+        /* found special match item, do process*/
+        if(ofp_inst->type == filter_inst_type && action_type == filter_action_type) {
+            char *value = action_item_value;
+            /* debug: print tick match item */
+//            fprintf(stderr, "\n%d\n"
+//                            "INST TICK ACTION TYPE:%02X\n"
+//                            "INST TICK LENGTH:%d\n"
+//                            "INST TICK VALUE:",
+//                    con, action_type, action_item_len);
+//            for(int i = 0; i < action_item_len - 4; ++i)
+//                fprintf(stderr,"%02X",*(value+i));
+//            fprintf(stderr,"\n");
+
+            /* Update Uep */
+            UEP_Msg* uep_msg = (UEP_Msg*)(value + 4);
+            uep.uepid.eid = uep_msg->uepid.eid;
+            uep.uepid.uid = uep_msg->uepid.uid;
+            uep.window = uep_msg->window;
+            uep.number = uep_msg->number;
+            config->getPriorityManager()->updateSplitOfUEP(uep_msg->window, uep.uepid, uep_msg->number);
+            fprintf(stderr, "INST TICK UEP:[%02X,%02X] WindowID:%u AddNumber:%u\n",uep.uepid.eid, uep.uepid.uid, uep.window, uep.number);
+
+            filter_lens += action_item_len;
+            continue;
+        }
+
+        /* copy to buf*/
+        ofp_action_header* new_action_item = (ofp_action_header*)new_action_start;
+        new_action_item->type = action_header->type;
+        new_action_item->len = action_header->len;
+        char *new_value = (char*)&(new_action_item->pad);
+        for(int i = 0; i < action_item_len - 4; ++i)
+            *(new_value+i) = *(action_item_value + i);
+        new_action_start += action_item_len;
+    }
+
+    /* Update Inst Lens */
+    *new_inst_len = original_inst_lens - filter_lens;
+    ofp_inst->len = htons(*new_inst_len);
+
+    /* The Byte Num Be Removed */
+    *kick_len = (filter_lens);
+
+
+    return uep;
 }
 
 
 void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
+    arg.qid = FLOW_MOD_QUEUE_ID;
     struct openflow::ofp_header *header =
             (struct openflow::ofp_header *)(msg);
 
@@ -284,7 +415,7 @@ void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
     }
 
     /* debug: print old match content */
-    fprintf(stderr, "\nOld match len:%u \n", total_length);
+    //fprintf(stderr, "\nOld match len:%u \n", total_length);
     char *match_item = ((char*)&(hdr->match))+ 4;
     bool has_inst = ntohs(header->length) - sizeof(struct openflow::ofp_header) - sizeof(struct ofp13_flow_mod) - total_length >= 2;
     char *ins = (((char *) &(hdr->match)) + total_length);
@@ -310,7 +441,11 @@ void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
     char* buf = new char[total_length];
     memset(buf, 0, total_length);
     uint16_t new_len = 0, except_len = 0;
-    Split::UEPID uepid = pack_mathch_except_type(((char*)&(hdr->match)), 0x8000, 0x36, 0x7F, buf, &new_len, &except_len, schedule->getConf());
+    UEP_Msg uep = pack_mathch_except_type(((char*)&(hdr->match)), 0x8000, 0x36, 0x7F, buf, &new_len, &except_len, schedule->getConf());
+    arg.priority = schedule->getConf()->getPriorityManager()->getUEPPriorityOfSplitK(uep.window, uep.uepid);
+    arg.uepid = uep.uepid;
+    //fprintf(stderr, "Match UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
+
     header->length = htons(ntohs(header->length) - except_len);
     /* copy buf match to msg*/
     for(int i = 0; i < new_len; ++i) {
@@ -322,7 +457,7 @@ void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
         for (int i = 0; i < inst_len; ++i) {
             *(((char*)&(hdr->match)) + i + new_len) = ins[i];
         }
-        fprintf(stderr, "\n\ninst len:%u \n\n", inst_len);
+        fprintf(stderr, "\n\nFlow_Mod Inst Len:%u\n", inst_len);
     }
 
     /* debug: print after copy match content*/
@@ -361,9 +496,88 @@ void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
 
     /* release buf */
     delete buf;
-    arg.uepid = uepid;
-}
+    /* Pack And Filter Inst */
 
+    if(has_inst) {
+
+        char* inst_start = (((char*)&(hdr->match)) +  new_len);
+        ofp_instruction* inst_header = (ofp_instruction*)inst_start;
+
+        uint16_t new_inst_len = ntohs(inst_header->len), filter_len = 0;
+        buf = new char[new_inst_len];
+        memset(buf, 0, new_inst_len);
+
+        UEP_Msg uep = pack_Inst_except_type(inst_start,
+                                            0x0400, 0x1900, 0xFF,
+                                            buf, &new_inst_len, &filter_len,
+                                            schedule->getConf());
+        arg.priority = schedule->getConf()->getPriorityManager()->getUEPPriorityOfSplitK(uep.window, uep.uepid);
+        arg.uepid = uep.uepid;
+        fprintf(stderr, "Inst UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
+        header->length = htons(ntohs(header->length) - filter_len);
+        /* copy buf action to msg*/
+
+        if(filter_len > 0)
+            for(int i = 0; i < new_inst_len - 4 ; ++i) {
+                *(inst_start + 8 + i) = buf[i];
+            }
+
+        /* Debug: Print Payload */
+//        fprintf(stderr, "Inst Payload New\n");
+//        for(int i = 0; i < ntohs(header->length); ++i) {
+//            fprintf(stderr,"%02X ",*(msg+i));
+//            if((i+1) % 16 == 0) fprintf(stderr, "\n");
+//        }
+//        fprintf(stderr, "\n");
+        delete buf;
+    }
+
+    arg.uepid = uep.uepid;
+
+}
+void do_ofp_packetout_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
+    arg.qid = PO_QUEUE_ID;
+    struct openflow::ofp_header *header =
+            (struct openflow::ofp_header *)(msg);
+    ofp_packet_out* packet_out = (ofp_packet_out*)msg;
+    char* action = (char*)(&packet_out->actions);
+    char* eth_data = action + ntohs(packet_out->actions_len);
+    uint16_t *type = (uint16_t*)(eth_data + 12);
+    uint16_t e_type = ntohs(*type);
+
+    if(e_type == LLDP_TYPE) {
+        arg.qid = LLDP_QUEUE_ID;
+        arg.priority = 0xFF;
+        arg.identify = header->xid;
+        arg.max_wait_time = arg.process_time = 0;
+    } else {
+        arg.qid = PO_QUEUE_ID;
+    }
+}
+void do_ofp_packetin_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
+    arg.qid = PI_QUEUE_ID;
+    struct openflow::ofp_header *header =
+            (struct openflow::ofp_header *)(msg);
+    ofp_packet_in* packet_in = (ofp_packet_in*)msg;
+    char* match = (char*)(&packet_in->match);
+
+
+    //uint16_t match_total_length = ntohs(packet_in->match.length) ;
+    uint16_t match_total_length = getMatchLenth(match);
+    uint16_t pad_len = 2;
+
+    char* eth_data = match + match_total_length + pad_len;
+    uint16_t *type = (uint16_t*)(eth_data + 12);
+    uint16_t e_type = ntohs(*type);
+    if(e_type == LLDP_TYPE) {
+        arg.qid = LLDP_QUEUE_ID;
+        arg.priority = 99.9;
+        arg.identify = header->xid;
+        arg.max_wait_time = arg.process_time = 0;
+    } else {
+        arg.qid = PI_QUEUE_ID;
+    }
+}
 //todo
 OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
     OFP_Msg_Arg arg;
@@ -376,51 +590,15 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
 
     switch (header->type) {
         case openflow::OFPT_PACKET_IN: {
-            arg.qid = PI_QUEUE_ID;
-
-            ofp_packet_in* packet_in = (ofp_packet_in*)msg;
-            char* match = (char*)(&packet_in->match);
-
-
-            //uint16_t match_total_length = ntohs(packet_in->match.length) ;
-            uint16_t match_total_length = getMatchLenth(match);
-            uint16_t pad_len = 2;
-
-            char* eth_data = match + match_total_length + pad_len;
-            uint16_t *type = (uint16_t*)(eth_data + 12);
-            uint16_t e_type = ntohs(*type);
-            if(e_type == LLDP_TYPE) {
-                arg.qid = LLDP_QUEUE_ID;
-                arg.priority = 0xFF;
-                arg.identify = header->xid;
-                arg.max_wait_time = arg.process_time = 0;
-            } else {
-                arg.qid = PI_QUEUE_ID;
-            }
-            //fprintf(stderr, "RECEIVE PI ETH_TYPE:%u match_len:%u\n", e_type, match_total_length);
+            do_ofp_packetin_processed(msg, arg, this);
             break;
         }
         case openflow::OFPT_FLOW_MOD: {
-            arg.qid = FLOW_MOD_QUEUE_ID;
             do_ofp_flowmod_processed(msg, arg, this);
             break;
         }
         case openflow::OFPT_PACKET_OUT: {
-            arg.qid = PO_QUEUE_ID;
-            ofp_packet_out* packet_out = (ofp_packet_out*)msg;
-            char* action = (char*)(&packet_out->actions);
-            char* eth_data = action + ntohs(packet_out->actions_len);
-            uint16_t *type = (uint16_t*)(eth_data + 12);
-            uint16_t e_type = ntohs(*type);
-
-            if(e_type == LLDP_TYPE) {
-                arg.qid = LLDP_QUEUE_ID;
-                arg.priority = 0xFF;
-                arg.identify = header->xid;
-                arg.max_wait_time = arg.process_time = 0;
-            } else {
-                arg.qid = PO_QUEUE_ID;
-            }
+            do_ofp_packetout_processed(msg, arg, this);
             break;
         }
         case openflow::OFPT_STATS_REQUEST: {
@@ -462,16 +640,8 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
 
 int32_t PolicyConfig::setupConf(uint16_t server_port) {
     this->server_port = server_port;
-
-    this->config_fd = Socket(AF_INET, SOCK_DGRAM, 0);
-    this->server.sin_addr.s_addr = INADDR_ANY;
-    this->server.sin_port = htons(server_port);
-    this->server.sin_family = AF_INET;
-
-    socklen_t len = sizeof(this->server);
-    int on = 1;
-    SetSocket(this->config_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-    Bind_Socket(this->config_fd, (SA*)&this->server, len);
+    initListenSocket();
+    initPriorityManager();
 }
 
 int32_t PolicyConfig::listenRequest() {
@@ -533,5 +703,99 @@ bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2) {
     }
     else {
         return t1.priority < t2.priority;
+    }
+}
+std::string getOFPMsgType(uint8_t ofp_type) {
+    using namespace rofl;
+    switch (ofp_type)
+    {
+        /* Immutable messages. */
+        case openflow::OFPT_HELLO:
+            return "OFPT_HELLO";
+            /* Symmetric message */
+        case openflow::OFPT_ERROR:
+            return  "OFPT_ERROR";        /* Symmetric message */
+        case openflow::OFPT_ECHO_REQUEST:
+            return "OFPT_ECHO_REQUEST"; /* Symmetric message */
+        case openflow::OFPT_ECHO_REPLY:
+            return "OFPT_ECHO_REPLY";   /* Symmetric message */
+        case openflow::OFPT_EXPERIMENTER:
+            return "OFPT_EXPERIMENTER"; /* Symmetric message */
+
+            /* Switch configuration messages. */
+        case openflow::OFPT_FEATURES_REQUEST:
+            return "OFPT_FEATURES_REQUEST";   /* Controller/switch message */
+        case openflow::OFPT_FEATURES_REPLY:
+            return "OFPT_FEATURES_REPLY";     /* Controller/switch message */
+        case openflow::OFPT_GET_CONFIG_REQUEST:
+            return "OFPT_GET_CONFIG_REQUEST"; /* Controller/switch message */
+        case openflow::OFPT_GET_CONFIG_REPLY:
+            return "OFPT_GET_CONFIG_REPLY";    /* Controller/switch message */
+        case openflow::OFPT_SET_CONFIG:
+            return  "OFPT_SET_CONFIG";        /* Controller/switch message */
+
+            /* Asynchronous messages. */
+        case openflow::OFPT_PACKET_IN:
+            return "OFPT_PACKET_IN"; /* Async message */
+        case openflow::OFPT_FLOW_REMOVED:
+            return "OFPT_FLOW_REMOVED"; /* Async message */
+        case openflow::OFPT_PORT_STATUS:
+            return "OFPT_PORT_STATUS";/* Async message */
+
+            /* Controller command messages. */
+        case openflow::OFPT_PACKET_OUT:
+            return "OFPT_PACKET_OUT"; /* Controller/switch message */
+        case openflow::OFPT_FLOW_MOD:
+            return "OFPT_FLOW_MOD"; /* Controller/switch message */
+        case openflow::OFPT_GROUP_MOD:
+            return "OFPT_GROUP_MOD";  /* Controller/switch message */
+        case openflow::OFPT_PORT_MOD:
+            return "OFPT_PORT_MOD"; /* Controller/switch message */
+        case openflow::OFPT_TABLE_MOD:
+            return "OFPT_TABLE_MOD";  /* Controller/switch message */
+
+            /* Multipart messages. */
+        case openflow::OFPT_MULTIPART_REQUEST:
+            return "OFPT_MULTIPART_REQUEST";
+            /* Controller/switch message */
+        case openflow::OFPT_MULTIPART_REPLY:
+            return "OFPT_MULTIPART_REPLY";   /* Controller/switch message */
+
+//        case openflow::OFPT_STATS_REQUEST:
+//            return "OFPT_STATS_REQUEST";     /* Controller/switch message */
+//        case openflow::OFPT_STATS__REPLY:
+//            return "OFPT_STATS__REPLY";      /* Controller/switch message */
+
+            /* Barrier messages. */
+        case openflow::OFPT_BARRIER_REQUEST:
+            return "OFPT_BARRIER_REQUEST";  /* Controller/switch message */
+        case openflow::OFPT_BARRIER_REPLY:
+            return "OFPT_BARRIER_REPLY"; /* Controller/switch message */
+
+            /* Queue Configuration messages. */
+        case openflow::OFPT_QUEUE_GET_CONFIG_REQUEST:
+            return "OFPT_QUEUE_GET_CONFIG_REQUEST";/* Controller/switch message */
+        case openflow::OFPT_QUEUE_GET_CONFIG_REPLY:
+            return "OFPT_QUEUE_GET_CONFIG_REPLY";   /* Controller/switch message */
+
+            /* Controller role change request messages. */
+        case openflow::OFPT_ROLE_REQUEST:
+            return  "OFPT_ROLE_REQUEST";/* Controller/switch message */
+        case openflow::OFPT_ROLE_REPLY:
+            return "OFPT_ROLE_REPLY";   /* Controller/switch message */
+
+            /* Asynchronous message configuration. */
+        case openflow::OFPT_GET_ASYNC_REQUEST:
+            return "OFPT_GET_ASYNC_REQUEST"; /* Controller/switch message */
+        case openflow::OFPT_GET_ASYNC_REPLY:
+            return "OFPT_GET_ASYNC_REPLY";   /* Controller/switch message */
+        case openflow::OFPT_SET_ASYNC:
+            return "OFPT_SET_ASYNC";         /* Controller/switch message */
+
+            /* Meters and rate limiters configuration messages. */
+        case openflow::OFPT_METER_MOD:
+            return "OFPT_METER_MOD"; /* Controller/switch message */
+        default:
+            break;
     }
 }

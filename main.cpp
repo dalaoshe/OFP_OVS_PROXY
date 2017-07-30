@@ -98,7 +98,7 @@ void* read_server(void* argv) {
 
 void* run_config_daemon(void* argv) {
     PolicyConfig* conf = (PolicyConfig*) argv;
-    conf->listenRequest();
+    //conf->listenRequest();
 }
 
 void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {

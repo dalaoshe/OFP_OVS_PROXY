@@ -7,17 +7,18 @@
 
 #include "RingBuffer.h"
 #include <map>
+#include <math.h>
 struct Split{
     struct UEPID{
-        uint8_t eid;
         uint8_t uid;
+        uint8_t eid;
         bool operator < (const UEPID& id) const {
             return eid < id.eid || (eid == id.eid && uid < id.uid);
         }
         UEPID() {
             this->eid = this->uid = 0;
         }
-    };
+    }__attribute__((packed));
     std::map<Split::UEPID, uint32_t> uepMap;
     uint32_t totalNumberSplit;
     Split() {
@@ -84,15 +85,23 @@ public:
 
     double getUEPRatioOfSplitK(uint32_t splitId, Split::UEPID uep) {
         uint32_t UEP = ((Split)this->windowBuffer->getData(splitId)).getUEPNumber(uep);
-        uint32_t TOTAL = this->windowBuffer->getTotal(splitId-this->windowSize, this->windowSize).totalNumberSplit;
+        uint32_t TOTAL = this->windowBuffer->getTotal(splitId - this->windowSize + 1, this->windowSize).totalNumberSplit;
+        //fprintf(stderr, "UEP:[%02X,%02X] window_id:%lu uep_window_number:%lu n_window_total:%lu \n", uep.eid, uep.uid, splitId, UEP, TOTAL);
+        if(TOTAL == 0) return 0.0;
         return (double)UEP / (double)TOTAL;
     }
 
     double convertRatioToPriority(double ratio) {
         //todo
-        double priorit = 0;
+        double priorit = exp(-ratio);
         //...
+
         return priorit;
+    }
+
+    double getUEPPriorityOfSplitK(uint32_t splitId, Split::UEPID uep) {
+        double ratio = getUEPRatioOfSplitK(splitId, uep);
+        return convertRatioToPriority(ratio);
     }
 };
 
