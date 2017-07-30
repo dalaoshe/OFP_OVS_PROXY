@@ -5,31 +5,17 @@
 #include "schedule.h"
 using namespace rofl;
 int32_t Schedule::putMessage(char* msg, int32_t len, int32_t fd) {
-    int32_t priority = this->getPriority(msg);
-    //int32_t qid = this->getQueueId(msg);
     OFP_Msg_Arg arg = this->getOFPMsgArg(msg);
-    OFP_Msg* ofp_msg = new OFP_Msg(msg, arg.len, fd, priority);
+
+    OFP_Msg* ofp_msg = new OFP_Msg(msg, arg.len, fd, arg.priority);
 
     ofp_msg->identity = arg.identify;
-    ofp_msg->max_wait_time = this->getMaxWaitTime(msg);
-    ofp_msg->process_time = this->getProcessTime(msg);
-    switch(arg.qid) {
-        case PI_QUEUE_ID: {//packet_in
-          //  fprintf(stderr, "Client PUT PACKET_IN MSG\n");
-            //pi_queue.putMsg(ofp_msg);
-            break;
-        }
-        case MSG_QUEUE_ID: {
-           // fprintf(stderr, "Client PUT OF MSG\n");
-            //msg_queue.putMsg(ofp_msg);
-            break;
-        }
-        default: {//other
-           // fprintf(stderr, "Client PUT OTHER MSG\n");
-            //msg_queue.putMsg(ofp_msg);
-            break;
-        }
-    }
+    ofp_msg->uepid = arg.uepid;
+    ofp_msg->len = arg.len;
+    ofp_msg->priority = arg.priority;
+    ofp_msg->max_wait_time = arg.max_wait_time;
+    ofp_msg->process_time = arg.process_time;
+
     this->queues[arg.qid]->putMsg(ofp_msg);
 }
 
@@ -83,19 +69,20 @@ int32_t Schedule::run() {
     int32_t max_in_process = 10;
     int on = 1, off = 0;
     while (1) {
-        //update queue
+
+        /* Start up Listen Response Thread */
         if(this->get_dp_id && !this->is_listen_resp) {
             pipeArg->name = this->resp_pipe;
             pthread_create(&pipe_t, NULL, &Run_listen_resp, (void*)pipeArg);
             this->is_listen_resp = 1;
         }
 
-
+        /* Update Queue */
         int32_t clean_num = 0;
         for(int i = 0; i < this->queue_num; ++i) {
             Queue *q = this->queues[i];
             q->decMsgTime();
-            clean_num += q->cleanFinishMsg();
+            clean_num += q->cleanFinishMsg(this->mark_result_fd);
         }
         max_in_process += clean_num;
 
@@ -111,7 +98,8 @@ int32_t Schedule::run() {
                 gettimeofday(&msg->send, NULL);
                 Writev_nByte(msg->fd, msg->buf, msg->len);
                 //SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
-                //print info
+
+                /* Debug: print info */
                 struct openflow::ofp_header *header =
                         (struct openflow::ofp_header *)(msg->buf);
                 if(!(header->type == openflow::OFPT_PACKET_IN)) {
@@ -134,34 +122,6 @@ int32_t Schedule::run() {
     }
 }
 
-int32_t Schedule::addPolicy(Policy *policy) {
-
-}
-
-
-//todo
-int32_t Schedule::getQueueId(char *msg) {
-    struct openflow::ofp_header *header =
-            (struct openflow::ofp_header *)(msg);
-    int32_t msg_len = be16toh(header->length);
-    uint32_t xid = header->xid;
-
-    if(header->type == openflow::OFPT_PACKET_IN) {
-        return PI_QUEUE_ID;
-    }
-    else {
-        return MSG_QUEUE_ID;
-    }
-}
-
-int32_t Schedule::getPriority(char *msg) {
-    struct openflow::ofp_header *header =
-            (struct openflow::ofp_header *)(msg);
-    int32_t msg_len = be16toh(header->length);
-    uint32_t xid = header->xid;
-//todo
-    return 0;
-}
 
 void*  schedule_thread(void* argv)  {
     ScheduleArg* scheduleArg = (ScheduleArg*)argv;
@@ -170,39 +130,12 @@ void*  schedule_thread(void* argv)  {
     schedule->run();
 }
 
-int32_t Schedule::getProcessTime(char *msg) {
-    struct openflow::ofp_header *header =
-            (struct openflow::ofp_header *)(msg);
-    int32_t msg_len = be16toh(header->length);
-    uint32_t xid = header->xid;
-
-    if(header->type == openflow::OFPT_PACKET_IN) {
-        return 1;
-    }
-    else {
-        return 1;
-    }
-}
-
-int32_t Schedule::getMaxWaitTime(char *msg) {
-    struct openflow::ofp_header *header =
-            (struct openflow::ofp_header *)(msg);
-    int32_t msg_len = be16toh(header->length);
-    uint32_t xid = header->xid;
-
-    if(header->type == openflow::OFPT_PACKET_IN) {
-        return 1;
-    }
-    else {
-        return 1;
-    }
-}
 
 
-uint32_t getMatchLenth(char* match) {
+uint16_t getMatchLenth(char* match) {
     uint16_t total_length = ntohs(*(uint16_t*)(match + 2));
-    fprintf(stderr, "%02X %02X, total_len %d",(*((char*)(match + 2))), *((char*)(match+3)), total_length);
-    size_t pad = (0x7 & total_length);
+    //fprintf(stderr, "%02X %02X, total_len %d",(*((char*)(match + 2))), *((char*)(match+3)), total_length);
+    uint16_t pad = (0x7 & total_length);
     /* append padding if not a multiple of 8 */
     if (pad) {
         total_length += 8 - pad;
@@ -210,9 +143,10 @@ uint32_t getMatchLenth(char* match) {
     return total_length;
 }
 
-void pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_t field_id, uint8_t value_tag,
+Split::UEPID pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_t field_id, uint8_t value_tag,
                              char* buf, uint16_t* new_len, uint16_t* except_len,
                              PolicyConfig* config) {
+    Split::UEPID uepid;
     uint16_t new_match_length = 0;
     uint16_t old_match_length = ntohs(*(uint16_t*)(match_msg + 2));
 
@@ -253,21 +187,24 @@ void pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_t field_
         /* found special match item, do process*/
         if(ntohs(item->oxm_class) == ofpxmc_id && item->oxm_field_id == field_id && *(uint8_t*)value == value_tag) {
             /* debug: print tick match item */
-//            char *value = (char*)&(item->value);
-//            fprintf(stderr, "\n%d\n"
-//                    "TICK CLASS:%02X\n"
-//                    "TICK FIELD:%02X\n"
-//                    "TICK LENGTH:%d\n"
-//                    "TICK VALUE:",
-//                    con, item->oxm_class, item->oxm_field_id,  item->length );
-//            for(int i = 0; i < item->length; ++i)
-//                fprintf(stderr,"%02X",*(value+i));
-//            fprintf(stderr,"\n");
+            char *value = (char*)&(item->value);
+            fprintf(stderr, "\n%d\n"
+                    "TICK CLASS:%02X\n"
+                    "TICK FIELD:%02X\n"
+                    "TICK LENGTH:%d\n"
+                    "TICK VALUE:",
+                    con, item->oxm_class, item->oxm_field_id,  item->length );
+            for(int i = 0; i < item->length; ++i)
+                fprintf(stderr,"%02X",*(value+i));
+            fprintf(stderr,"\n");
 
             /* update policy */
             Policy::policy_id pid;
             pid.app_id = *((uint8_t*)value + 1);
             pid.user_id = *((uint8_t*)value + 2);
+
+            uepid.eid = pid.app_id;
+            uepid.uid = pid.user_id;
             if(config->hasPolicy(pid)) {
                 /* debug: print this policy info */
 //                Policy* policy = config->getPolicy(pid);
@@ -326,6 +263,105 @@ void pack_mathch_except_type(char* match_msg, uint16_t ofpxmc_id, uint8_t field_
     *except_len = (tick_match_item_len);
     /* the new mathe total len */
     *new_len = new_match_length;
+
+    return uepid;
+}
+
+
+void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
+    struct openflow::ofp_header *header =
+            (struct openflow::ofp_header *)(msg);
+
+    struct ofp13_flow_mod *hdr = (struct ofp13_flow_mod *) (msg + sizeof(struct openflow::ofp_header));
+    arg.identify = hdr->cookie;
+    //fprintf(stderr, "RECEIVE FLOW MOD COOKIE:%lu \n", arg.identify);
+
+    uint16_t total_length = ntohs(*(uint16_t*)(((char*)&(hdr->match)) + 2));
+    size_t pad = (0x7 & total_length);
+    /* append padding if not a multiple of 8 */
+    if (pad) {
+        total_length += 8 - pad;
+    }
+
+    /* debug: print old match content */
+    fprintf(stderr, "\nOld match len:%u \n", total_length);
+    char *match_item = ((char*)&(hdr->match))+ 4;
+    bool has_inst = ntohs(header->length) - sizeof(struct openflow::ofp_header) - sizeof(struct ofp13_flow_mod) - total_length >= 2;
+    char *ins = (((char *) &(hdr->match)) + total_length);
+//                int con  = 0;
+//                while (match_item < ins - (8 - pad)) {
+//                    ofp_match_items* item = (ofp_match_items*)match_item;
+//                    char *value = (char*)&(item->value);
+//                    fprintf(stderr, "\n%d\n"
+//                            "OLD CLASS:%02X\n"
+//                            "OLD FIELD:%02X\n"
+//                            "OLD LENGTH:%d\n"
+//                            "OLD VALUE:",
+//                            con, item->oxm_class, item->oxm_field_id,  item->length );
+//                    for(int i = 0; i < item->length; ++i)
+//                    fprintf(stderr,"%02X",*(value+i));
+//                    fprintf(stderr,"\n");
+//                    con += 1;
+//
+//                    match_item += 4 + item->length;
+//                }
+
+    /* copy true match item to buf */
+    char* buf = new char[total_length];
+    memset(buf, 0, total_length);
+    uint16_t new_len = 0, except_len = 0;
+    Split::UEPID uepid = pack_mathch_except_type(((char*)&(hdr->match)), 0x8000, 0x36, 0x7F, buf, &new_len, &except_len, schedule->getConf());
+    header->length = htons(ntohs(header->length) - except_len);
+    /* copy buf match to msg*/
+    for(int i = 0; i < new_len; ++i) {
+        *(((char*)&(hdr->match)) + i) = buf[i];
+    }
+    /* copy instruction to valid place*/
+    if(has_inst) {
+        uint16_t inst_len = ntohs(*((uint16_t*)(ins+2)));
+        for (int i = 0; i < inst_len; ++i) {
+            *(((char*)&(hdr->match)) + i + new_len) = ins[i];
+        }
+        fprintf(stderr, "\n\ninst len:%u \n\n", inst_len);
+    }
+
+    /* debug: print after copy match content*/
+//                total_length = ntohs(*(uint16_t*)(buf + 2));
+//                total_length += 4;
+//                fprintf(stderr, "\nnew match len:%u \n", total_length);
+//                match_item = buf+ 4;
+//                ins = (buf + total_length);
+//                con = 0;
+//                while (match_item < ins - 4) {
+//                    ofp_match_items* item = (ofp_match_items*)match_item;
+//                    char *value = (char*)&(item->value);
+//                    fprintf(stderr, "\n%d\n"
+//                            "NEW CLASS:%02X\n"
+//                            "NEW FIELD:%02X\n"
+//                            "NEW LENGTH:%d\n"
+//                            "NEW VALUE:",
+//                            con, item->oxm_class, item->oxm_field_id,  item->length );
+//                    for(int i = 0; i < item->length; ++i)
+//                        fprintf(stderr,"%02X",*(value+i));
+//                    fprintf(stderr,"\n");
+//                    con += 1;
+//                    match_item += 4 + item->length;
+//                }
+
+
+    /* debug: print pay load and total len*/
+//                fprintf(stderr, "Now Pay load\n");
+//                for(int i = 0; i < ntohs(header->length); ++i) {
+//                    fprintf(stderr,"%02X ",*(msg+i));
+//                    if((i+1) % 16 == 0) fprintf(stderr, "\n");
+//                }
+//                fprintf(stderr, "\n");
+//
+//                fprintf(stderr, "\n\nNow Header Len:%u \n\n", ntohs(header->length));
+
+    /* release buf */
+    delete buf;
+    arg.uepid = uepid;
 }
 
 //todo
@@ -335,6 +371,8 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
             (struct openflow::ofp_header *)(msg);
     int32_t msg_len = be16toh(header->length);
     uint32_t xid = header->xid;
+    arg.max_wait_time = arg.process_time = 1;
+    arg.priority = 1;
 
     switch (header->type) {
         case openflow::OFPT_PACKET_IN: {
@@ -344,8 +382,8 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
             char* match = (char*)(&packet_in->match);
 
 
-            uint16_t match_total_length = ntohs(packet_in->match.length) ;
-            match_total_length += 4;
+            //uint16_t match_total_length = ntohs(packet_in->match.length) ;
+            uint16_t match_total_length = getMatchLenth(match);
             uint16_t pad_len = 2;
 
             char* eth_data = match + match_total_length + pad_len;
@@ -364,6 +402,7 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
         }
         case openflow::OFPT_FLOW_MOD: {
             arg.qid = FLOW_MOD_QUEUE_ID;
+            do_ofp_flowmod_processed(msg, arg, this);
             break;
         }
         case openflow::OFPT_PACKET_OUT: {
@@ -415,107 +454,6 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
         }
         default: {
             arg.qid = MSG_QUEUE_ID;
-        }
-    }
-
-    if(header->type == openflow::OFPT_FLOW_MOD) {
-        switch (header->version) {
-            case 4: {
-                struct ofp13_flow_mod *hdr = (struct ofp13_flow_mod *) (msg + sizeof(struct openflow::ofp_header));
-                arg.identify = hdr->cookie;
-                //fprintf(stderr, "RECEIVE FLOW MOD COOKIE:%lu \n", arg.identify);
-
-                uint16_t total_length = ntohs(*(uint16_t*)(((char*)&(hdr->match)) + 2));
-                size_t pad = (0x7 & total_length);
-                /* append padding if not a multiple of 8 */
-                if (pad) {
-                    total_length += 8 - pad;
-                }
-
-                /* debug: print old match content */
-                fprintf(stderr, "\nOld match len:%u \n", total_length);
-                char *match_item = ((char*)&(hdr->match))+ 4;
-                bool has_inst = ntohs(header->length) - sizeof(struct openflow::ofp_header) - sizeof(struct ofp13_flow_mod) - total_length >= 2;
-                char *ins = (((char *) &(hdr->match)) + total_length);
-//                int con  = 0;
-//                while (match_item < ins - (8 - pad)) {
-//                    ofp_match_items* item = (ofp_match_items*)match_item;
-//                    char *value = (char*)&(item->value);
-//                    fprintf(stderr, "\n%d\n"
-//                            "OLD CLASS:%02X\n"
-//                            "OLD FIELD:%02X\n"
-//                            "OLD LENGTH:%d\n"
-//                            "OLD VALUE:",
-//                            con, item->oxm_class, item->oxm_field_id,  item->length );
-//                    for(int i = 0; i < item->length; ++i)
-//                    fprintf(stderr,"%02X",*(value+i));
-//                    fprintf(stderr,"\n");
-//                    con += 1;
-//
-//                    match_item += 4 + item->length;
-//                }
-
-                /* copy true match item to buf */
-                char* buf = new char[total_length];
-                memset(buf, 0, total_length);
-                uint16_t new_len = 0, except_len = 0;
-                pack_mathch_except_type(((char*)&(hdr->match)), 0x8000, 0x36, 0x7F, buf, &new_len, &except_len, this->conf);
-                header->length = htons(ntohs(header->length) - except_len);
-                /* copy buf match to msg*/
-                for(int i = 0; i < new_len; ++i) {
-                    *(((char*)&(hdr->match)) + i) = buf[i];
-                }
-                /* copy instruction to valid place*/
-                if(has_inst) {
-                    uint16_t inst_len = ntohs(*((uint16_t*)(ins+2)));
-                    for (int i = 0; i < inst_len; ++i) {
-                        *(((char*)&(hdr->match)) + i + new_len) = ins[i];
-                    }
-                    fprintf(stderr, "\n\ninst len:%u \n\n", inst_len);
-                }
-
-                /* debug: print after copy match content*/
-//                total_length = ntohs(*(uint16_t*)(buf + 2));
-//                total_length += 4;
-//                fprintf(stderr, "\nnew match len:%u \n", total_length);
-//                match_item = buf+ 4;
-//                ins = (buf + total_length);
-//                con = 0;
-//                while (match_item < ins - 4) {
-//                    ofp_match_items* item = (ofp_match_items*)match_item;
-//                    char *value = (char*)&(item->value);
-//                    fprintf(stderr, "\n%d\n"
-//                            "NEW CLASS:%02X\n"
-//                            "NEW FIELD:%02X\n"
-//                            "NEW LENGTH:%d\n"
-//                            "NEW VALUE:",
-//                            con, item->oxm_class, item->oxm_field_id,  item->length );
-//                    for(int i = 0; i < item->length; ++i)
-//                        fprintf(stderr,"%02X",*(value+i));
-//                    fprintf(stderr,"\n");
-//                    con += 1;
-//                    match_item += 4 + item->length;
-//                }
-
-
-                /* debug: print pay load and total len*/
-//                fprintf(stderr, "Now Pay load\n");
-//                for(int i = 0; i < ntohs(header->length); ++i) {
-//                    fprintf(stderr,"%02X ",*(msg+i));
-//                    if((i+1) % 16 == 0) fprintf(stderr, "\n");
-//                }
-//                fprintf(stderr, "\n");
-//
-//                fprintf(stderr, "\n\nNow Header Len:%u \n\n", ntohs(header->length));
-
-                /* release buf */
-                delete buf;
-
-                break;
-            }
-            default: {
-
-            }
         }
     }
     arg.len = ntohs(header->length);

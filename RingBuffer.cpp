@@ -6,7 +6,7 @@
 
 
 template <class T>
-uint32_t RingBuffer::putdData(T data) {
+uint32_t RingBuffer<T>::putdData(T data) {
     uint32_t temp = tail;
     this->buffer[tail % buffer_size] = data;
     this->current_size += 1;
@@ -23,12 +23,12 @@ uint32_t RingBuffer::putdData(T data) {
 }
 
 template <class T>
-T RingBuffer::getData(uint32_t index) {
+T RingBuffer<T>::getData(uint32_t index) {
     return buffer[index % buffer_size];
 }
 
 template <class T>
-T RingBuffer::getTotal(uint32_t begin, uint32_t lens) {
+T RingBuffer<T>::getTotal(uint32_t begin, uint32_t lens) {
     T temp;
     for(uint32_t i = begin; i < begin + lens; ++i) {
         temp += this->buffer[i % buffer_size];

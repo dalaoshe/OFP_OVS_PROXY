@@ -14,6 +14,9 @@ struct Split{
         bool operator < (const UEPID& id) const {
             return eid < id.eid || (eid == id.eid && uid < id.uid);
         }
+        UEPID() {
+            this->eid = this->uid = 0;
+        }
     };
     std::map<Split::UEPID, uint32_t> uepMap;
     uint32_t totalNumberSplit;
@@ -56,7 +59,7 @@ struct Split{
 };
 
 class PriorityManager {
-    RingBuffer* windowBuffer;
+    RingBuffer<Split>* windowBuffer;
     uint32_t  windowSize;
     uint32_t bufferSize;
 public:
@@ -81,7 +84,7 @@ public:
 
     double getUEPRatioOfSplitK(uint32_t splitId, Split::UEPID uep) {
         uint32_t UEP = ((Split)this->windowBuffer->getData(splitId)).getUEPNumber(uep);
-        uint32_t TOTAL = this->windowBuffer->getTotal(splitId-this->windowSize, this->windowSize);
+        uint32_t TOTAL = this->windowBuffer->getTotal(splitId-this->windowSize, this->windowSize).totalNumberSplit;
         return (double)UEP / (double)TOTAL;
     }
 

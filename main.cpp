@@ -56,19 +56,7 @@ void* read_client(void* argv) {
             fprintf(stderr, "kill server thread %d error: %s \n", server_tid, strerror(errno));
             break;
         } else {
-//            struct openflow::ofp_header *header =
-//                    (struct openflow::ofp_header *)(buf);
-
-         //   Write_nByte(server_fd, buf, cn);
             client_to_server_schedule->putMessage(buf, cn, server_fd);
-//            if(header->type == openflow::OFPT_FLOW_MOD || header->type == openflow::OFPT_PACKET_IN) {
-//                timeval told = *arg->t;
-//                gettimeofday( arg->t, NULL );
-//                double ms = (double (arg->t->tv_sec-told.tv_sec) * 1000.0) + (double (arg->t->tv_usec - told.tv_usec) / 1000.0);
-//                fprintf(stderr, "client:port:%d read %d byte from client by client_fd %d to server_fd %d last packetin time:%lf ms\n", port, cn,
-//                        client_fd, server_fd, ms);
-//            }
-          //  int w = write(server_fd, buf, cn);
         }
     }
 

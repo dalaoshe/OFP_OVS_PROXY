@@ -14,7 +14,7 @@
 #include <cstdio>
 #include <pthread.h>
 #include <map>
-
+#include "PriorityManager.h"
 using namespace std;
 
 struct OFP_Msg_Arg {
@@ -24,6 +24,7 @@ struct OFP_Msg_Arg {
     int32_t process_time;
     uint64_t identify;
     uint16_t len;
+    Split::UEPID uepid;
 
 };
 
@@ -35,9 +36,11 @@ public:
     int32_t max_wait_time;// indicate how long can wait
     int32_t process_time;// indicate processed finished
     uint64_t identity;
+    Split::UEPID uepid;
     uint8_t in_process;
     uint8_t finished;
-    timeval recv,send, end;
+    timeval recv, send, end;
+    uint8_t ofp_type;
     rofl::openflow::ofp_header *header;
     char* buf;
 public:
@@ -46,6 +49,10 @@ public:
         this->priority = priority;
         this->fd = fd;
         this->identity = 0;
+
+        this->uepid.eid = 0;
+        this->uepid.uid = 0;
+
         this->in_process = 0;
         this->finished = 0;
         gettimeofday(&recv, NULL);
@@ -56,7 +63,8 @@ public:
         for(int i = 0 ; i < len; ++i) {
             this->buf[i] = msg[i];
         }
-        header = (rofl::openflow::ofp_header *)(this->buf);
+        this->header = (rofl::openflow::ofp_header *)(this->buf);
+        this->ofp_type = ((rofl::openflow::ofp_header *)(this->buf))->type;
 
 
 
@@ -144,6 +152,7 @@ public:
                && !this->msg_queue[i]->finished
                && this->msg_queue[i]->identity == identify) {
                 this->msg_queue[i]->finished = 1;
+                gettimeofday(&this->msg_queue[i]->end, NULL);
                 //fprintf(stderr, "\n\nHas Find Identify:%lu  \n\n", identify);
                 pthread_mutex_unlock(&this->queue_mutex);
                 return 1;
@@ -160,7 +169,7 @@ public:
     }
 
     //pop and get number of finished msgs
-    int32_t cleanFinishMsg() {
+    int32_t cleanFinishMsg(FILE* mark) {
         pthread_mutex_lock(&this->queue_mutex);
         uint64_t num = this->msg_queue.size();
         int32_t count = 0;
@@ -168,6 +177,15 @@ public:
             //fprintf(stderr, "\n\n packet need time %d in process %d \n\n", this->msg_queue[index]->process_time, this->msg_queue[index]->in_process);
 
             if((this->msg_queue[index]->in_process) && (this->msg_queue[index]->finished == 1)) {
+                double s = this->msg_queue[index]->end.tv_sec - this->msg_queue[index]->recv.tv_sec;
+                double us = this->msg_queue[index]->end.tv_usec - this->msg_queue[index]->recv.tv_usec;
+                double ms = s * 1000.0 + us / 1000.0;
+
+                if(this->msg_queue[index]->uepid.eid != 0) {
+                    fprintf(mark, "UEP:[%02X, %02X] Identify:%lu Used Time:%lf ms\n",this->msg_queue[index]->uepid.eid, this->msg_queue[index]->uepid.uid, this->msg_queue[index]->identity, ms);
+                    fflush(mark);
+                   // fprintf(stderr, "Resp Identify:%lu Used Time:%lf ms\n", this->msg_queue[index]->identity, ms);
+                }
                 delete this->msg_queue[index];
                 this->msg_queue.erase(this->msg_queue.begin() + index);
                 --index;
@@ -288,8 +306,10 @@ class Schedule {
     pthread_mutex_t policy_mutex;
     PolicyConfig* conf;
     int32_t queue_num;
+    FILE* mark_result_fd;
     char resp_pipe[50];
     char name[30];
+    char resp_record_name[50];
     bool get_dp_id;
     bool is_listen_resp;
     char dp_id;
@@ -304,31 +324,35 @@ public:
     }
     void setGet_dp_id(bool get) { this->get_dp_id = get; }
     Schedule* other;
+
     Schedule(char* name, char* pipe_name) {
         policy_mutex = PTHREAD_MUTEX_INITIALIZER;
         this->get_dp_id = this->is_listen_resp = 0;
         this->dp_id = 0;
         strcpy(this->name, name);
         strcpy(this->resp_pipe, pipe_name);
-        //fprintf(stderr, "\nCreate Schedule:%s , pipe:%s\n",this->name, this->resp_pipe);
+        strcpy(this->resp_record_name, pipe_name);
+        /* Open Record Process Time File */
+        mark_result_fd = fopen(this->resp_record_name, "w");
+        if(mark_result_fd < 0) {
+            fprintf(stderr, "Open Resp Record:%s, Error:%s\n", this->resp_record_name, strerror(errno));
+        }
+
+        /* Init Multi-Queue */
         this->queue_num = 10;
         for(int i = 0; i < this->queue_num; ++i) {
             Queue* q = new Queue();
             queues.push_back(q);
         }
-     //   this->fd = fd;
     }
+
     int32_t putMessage(char* msg, int32_t len, int32_t fd);
     int32_t run();
-    int32_t addPolicy(Policy* policy);
-    int32_t getPriority(char* msg);
-    int32_t getQueueId(char* msg);
-    int32_t getMaxWaitTime(char* msg);
-    int32_t getProcessTime(char* msg);
     OFP_Msg_Arg getOFPMsgArg(char* msg);
     std::vector<Queue*> *getOtherQueues(){
         return this->other_queues;
     }
+    PolicyConfig* getConf() { return this->conf; }
     std::vector<Queue*> *getQueues(){
         return &this->queues;
     }
