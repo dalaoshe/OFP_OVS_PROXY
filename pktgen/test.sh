@@ -62,7 +62,7 @@ pgset "udp_dst_max 6555"
     for (( i=1; i<10000; i++ ));do
 	PGDEV=/proc/net/pktgen/h1-eth0
 	
-	SPEED=`expr 5000`
+	SPEED=`expr 2000`
 #+ $SPEED`
 	DELAY=`expr ${BASIC_DELAY} / $SPEED`
 	PPS=`expr ${SPEED} \* ${BASIC_SPEED}`

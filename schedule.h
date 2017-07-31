@@ -13,10 +13,12 @@
 #include <vector>
 #include <cstdio>
 #include <pthread.h>
+#include <cstring>
+#include <string.h>
 #include <map>
 #include "PriorityManager.h"
 using namespace std;
-
+std::string getOFPMsgType(uint8_t ofp_type);
 struct OFP_Msg_Arg {
     uint8_t qid;
     double_t priority;
@@ -79,14 +81,19 @@ bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2);
 
 
 //switch to controller
-#define PI_QUEUE_ID 0
+#define PI_QUEUE_ID 1
 #define MULTI_PART_REPLY_QUEUE_ID 1
 #define MSG_QUEUE_ID 2
+
 //controller to switch
+#define IMPORTANT_QUEUE_ID 0
 #define LLDP_QUEUE_ID 0
-#define FLOW_MOD_QUEUE_ID 0
-#define MULTI_PART_REQUEST_QUEUE_ID 1
-#define PO_QUEUE_ID 2
+#define FLOW_MOD_QUEUE_1_ID 1
+#define PO_QUEUE_1_ID 2
+#define FLOW_MOD_QUEUE_2_ID 7
+#define PO_QUEUE_2_ID 8
+#define MULTI_PART_REQUEST_QUEUE_ID 0
+#define LEAST_QUEUE_ID 9
 
 #define LLDP_TYPE 0x88cc
 #define ARP 0x806
@@ -95,8 +102,15 @@ class Queue {
     pthread_mutex_t queue_mutex;
     //std::queue<OFP_Msg*> msg_queue;
     std::vector<OFP_Msg*> msg_queue;
+    //uint32_t interval_ms;
+    timeval last_fetch;
     int32_t size;
 public:
+    double_t interval_ms;
+    Queue(double_t interval_ms) {
+        this->interval_ms = interval_ms;
+        gettimeofday(&last_fetch, NULL);
+    }
     int32_t getSize() {
         pthread_mutex_lock(&this->queue_mutex);
         int32_t temp = this->size;
@@ -105,6 +119,7 @@ public:
     }
     int64_t putMsg(OFP_Msg* msg) {
         pthread_mutex_lock(&this->queue_mutex);
+
         this->msg_queue.push_back(msg);
         int64_t index = this->msg_queue.size() - 1;
         pthread_mutex_unlock(&this->queue_mutex);
@@ -115,7 +130,7 @@ public:
           msg->identity != 0)
         &&
         !(msg->header->type == rofl::openflow::OFPT_STATS_REQUEST &&
-          msg->identity != 0));
+          msg->identity != 0)) || (msg->header->type == rofl::openflow::OFPT_PACKET_OUT);
         return need_no_time;
 
     }
@@ -179,14 +194,14 @@ public:
         uint64_t num = this->msg_queue.size();
         if(pos > num || pos < 0) {
             pthread_mutex_unlock(&this->queue_mutex);
-            return 1;
+            return 0;
         }
         if(num > 0) {
           //  fprintf(stderr, "\n\nTry Find Identify %lu \n\n", identify);
         }
         OFP_Msg* msg = this->msg_queue[pos];
         if( msg->in_process
-            && msg->finished
+            && !msg->finished
             && msg->identity == identify) {
             msg->finished = 1;
             gettimeofday(&msg->end, NULL);
@@ -214,13 +229,35 @@ public:
             if((this->msg_queue[index]->in_process) && (this->msg_queue[index]->finished == 1)) {
                 double s = this->msg_queue[index]->end.tv_sec - this->msg_queue[index]->recv.tv_sec;
                 double us = this->msg_queue[index]->end.tv_usec - this->msg_queue[index]->recv.tv_usec;
-                double ms = s * 1000.0 + us / 1000.0;
+                double s2 = this->msg_queue[index]->send.tv_sec - this->msg_queue[index]->recv.tv_sec;
+                double us2 = this->msg_queue[index]->send.tv_usec - this->msg_queue[index]->recv.tv_usec;
 
-                if(this->msg_queue[index]->uepid.eid != 0) {
-                    fprintf(mark, "UEP:[%02X, %02X] Identify:%lu Used Time:%lf ms\n",this->msg_queue[index]->uepid.eid, this->msg_queue[index]->uepid.uid, this->msg_queue[index]->identity, ms);
-                    fflush(mark);
+                double ms = s * 1000.0 + us / 1000.0;
+                double ms2 = s2 * 1000.0 + us2 / 1000.0;
+                if(this->msg_queue[index]->uepid.uid != 0) {
+                    if(this->msg_queue[index]->uepid.uid == 2 || this->msg_queue[index]->uepid.uid == 4) {
+                        char temp[300];
+//                        size_t  n = sprintf(temp, "UEP:[%02X, %02X] Identify:%lu Used Time:%lf ms Send Time:%lf ms\n",
+//                                this->msg_queue[index]->uepid.eid,
+//                                this->msg_queue[index]->uepid.uid, this->msg_queue[index]->identity, ms, ms2);
+                        fprintf(stderr,"UEP:[%02X, %02X] Msg_Type:%s Identify:%lu Used Time:%lf ms Send Time:%lf ms\n",
+                                this->msg_queue[index]->uepid.eid,
+                                this->msg_queue[index]->uepid.uid,
+                                getOFPMsgType(this->msg_queue[index]->ofp_type).c_str(),
+                                this->msg_queue[index]->identity, ms, ms2);
+
+                        fprintf(mark,"UEP:[%02X, %02X] Msg_Type:%s Identify:%lu Used Time:%lf ms Send Time:%lf ms\n",
+                                this->msg_queue[index]->uepid.eid,
+                                this->msg_queue[index]->uepid.uid,
+                                getOFPMsgType(this->msg_queue[index]->ofp_type).c_str(),
+                                this->msg_queue[index]->identity, ms, ms2);
+                        //fflush(mark);
+                        //write(mark->_fileno, temp, n);
+                    }
+                    //fflush(mark);
                    // fprintf(stderr, "Resp Identify:%lu Used Time:%lf ms\n", this->msg_queue[index]->identity, ms);
                 }
+
                 delete this->msg_queue[index];
                 this->msg_queue.erase(this->msg_queue.begin() + index);
                 --index;
@@ -240,6 +277,22 @@ public:
     OFP_Msg* fetchMsg() {
         pthread_mutex_lock(&this->queue_mutex);
         OFP_Msg* msg = NULL;
+
+        timeval now;
+        gettimeofday(&now, NULL);
+        double s = now.tv_sec - last_fetch.tv_sec;
+        double us = now.tv_usec - last_fetch.tv_usec;
+        double ms = s * 1000.0 + us / 1000.0;
+        if(ms > interval_ms) {
+            last_fetch.tv_sec = now.tv_sec;
+            last_fetch.tv_usec = now.tv_usec;
+
+        } else{
+           // fprintf(stderr, "no in time ! %lf %lf \n",ms, interval_ms);
+            pthread_mutex_unlock(&this->queue_mutex);
+            return msg;
+        }
+
         uint64_t num = this->msg_queue.size();
         for(uint64_t i = 0; i < num; ++i) {
             if(!this->msg_queue[i]->in_process && this->msg_queue[i]->read_to_be_sent) {
@@ -251,6 +304,7 @@ public:
                     msg = this->msg_queue[i];
                 }
             }
+            if(msg != NULL && (msg->uepid.uid == 2 ||msg->uepid.uid == 4))break;
         }
         pthread_mutex_unlock(&this->queue_mutex);
         return msg;
@@ -377,6 +431,7 @@ struct MsgPos{
 class Schedule {
     std::vector<Queue*> queues;
     std::vector<Queue*> *other_queues;
+    std::priority_queue<OFP_Msg*> send_list;
     std::map<uint64_t , MsgPos> pos_map;
     pthread_mutex_t policy_mutex;
     PolicyConfig* conf;
@@ -392,24 +447,32 @@ class Schedule {
 
    // int32_t fd;
 public:
+    char* filter_buf;
     void setDpid(char dp_id) {
         this->dp_id = dp_id;
         uint32_t lens = strlen(this->resp_pipe);
         this->resp_pipe[lens] = this->dp_id;
         this->resp_pipe[lens+1] = 0;
     }
+    bool isSWToControl() {
+        return !(strcmp(this->name, "SERVER") == 0);
+    }
     void setGet_dp_id(bool get) { this->get_dp_id = get; }
     Schedule* other;
 
-    Schedule(char* name, char* pipe_name) {
+    Schedule(char* name, char* pipe_name, uint16_t port) {
         policy_mutex = PTHREAD_MUTEX_INITIALIZER;
+        this->filter_buf = new char[600];
         this->get_dp_id = this->is_listen_resp = 0;
         this->dp_id = 0;
+
         strcpy(this->name, name);
         strcpy(this->resp_pipe, pipe_name);
-        strcpy(this->resp_record_name, pipe_name);
+
+        int n = sprintf(this->resp_record_name, "%s_%d",pipe_name, port);
+
         /* Open Record Process Time File */
-        mark_result_fd = fopen(this->resp_record_name, "w");
+        mark_result_fd = fopen(this->resp_record_name, "a");
         if(mark_result_fd < 0) {
             fprintf(stderr, "Open Resp Record:%s, Error:%s\n", this->resp_record_name, strerror(errno));
         }
@@ -417,7 +480,13 @@ public:
         /* Init Multi-Queue */
         this->queue_num = 10;
         for(int i = 0; i < this->queue_num; ++i) {
-            Queue* q = new Queue();
+            Queue *q;
+            if(i < 5) {
+                q = new Queue(-1);
+            }
+            else {
+                q = new Queue(i * 20);
+            }
             queues.push_back(q);
         }
     }
@@ -439,7 +508,7 @@ public:
         this->other_queues = other_queues;
     }
     ~Schedule() {
-
+        fclose(mark_result_fd);
     }
 };
 
@@ -450,5 +519,5 @@ struct ScheduleArg{
     //int32_t* server_fd;
 };
 void* schedule_thread(void* argv) ;
-std::string getOFPMsgType(uint8_t ofp_type);
+
 #endif //TCP_TUNNEL_SCHEDULE_H

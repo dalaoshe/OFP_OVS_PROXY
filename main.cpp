@@ -57,6 +57,7 @@ void* read_client(void* argv) {
             break;
         } else {
             client_to_server_schedule->putMessage(buf, cn, server_fd);
+            //Writev_nByte(server_fd, buf, cn);
         }
     }
 
@@ -92,6 +93,7 @@ void* read_server(void* argv) {
             break;
         } else {
             server_to_client_schedule->putMessage(buf, sn, client_fd);
+            //Writev_nByte(client_fd, buf, sn);
         }
     }
 }
@@ -158,10 +160,12 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
 
 
 
-
+            fprintf(stderr, "port:%d start schedule\n", ntohs(client.sin_port));
             /* Start Schedule Thread To Process Client_To_Server Msg and Server_To_Client Msg */
-            Schedule* client_to_server_schedule = new Schedule("CLIENT", "/home/dalaoshe/Client_to_Server_PIPE.txt");
-            Schedule* server_to_client_schedule = new Schedule("SERVER", "/home/dalaoshe/SERVER_to_Client_PIPE.txt");
+            timeval now;
+            gettimeofday(&now, NULL);
+            Schedule* client_to_server_schedule = new Schedule("CLIENT", "/home/dalaoshe/Client_to_Server_PIPE.txt", ntohs(client.sin_port));
+            Schedule* server_to_client_schedule = new Schedule("SERVER", "/home/dalaoshe/SERVER_to_Client_PIPE.txt", ntohs(client.sin_port) + now.tv_usec);
             client_to_server_schedule->other = server_to_client_schedule;
             server_to_client_schedule->other = client_to_server_schedule;
 
@@ -203,7 +207,8 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             pthread_join(t_server, NULL);
 
             fprintf(stderr, "port:%d tunnel close \n",ntohs(client.sin_port), strerror(errno));
-
+            delete server_to_client_schedule;
+            delete client_to_server_schedule;
             exit(0);
         }
 

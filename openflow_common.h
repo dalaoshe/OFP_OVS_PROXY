@@ -1786,6 +1786,47 @@ struct ofp_action_experimenter_header {
     // uint32_t exp_type;
     uint8_t data[0];
 };
+
 OFP_ASSERT(sizeof(struct ofp_action_experimenter_header) == 8);
+struct ofp_flow_mod {
+    rofl::openflow::ofp_header header;
+    uint64_t cookie;      /* Opaque controller-issued identifier. */
+    uint64_t cookie_mask; /* Mask used to restrict the cookie bits
+                                                           that must match when
+                           the command is
+                                                           OFPFC_MODIFY* or
+                           OFPFC_DELETE*. A value
+                                                           of 0 indicates no
+                           restriction. */
+
+    /* Flow actions. */
+    uint8_t table_id;      /* ID of the table to put the flow in */
+    uint8_t command;       /* One of OFPFC_*. */
+    uint16_t idle_timeout; /* Idle time before discarding (seconds). */
+    uint16_t hard_timeout; /* Max time before discarding (seconds). */
+    uint16_t priority;     /* Priority level of flow entry. */
+    uint32_t buffer_id;    /* Buffered packet to apply to (or -1).
+                                                            Not meaningful for
+                            OFPFC_DELETE*. */
+    uint32_t out_port;     /* For OFPFC_DELETE* commands, require
+                                                            matching entries to
+                            include this as an
+                                                            output port.  A value of
+                            OFPP_ANY
+                                                            indicates no
+                            restriction. */
+    uint32_t out_group;    /* For OFPFC_DELETE* commands, require
+                                                            matching entries to
+                            include this as an
+                                                            output group.  A value
+                            of OFPG_ANY
+                                                            indicates no
+                            restriction. */
+    uint16_t flags;        /* One of OFPFF_*. */
+    uint8_t pad[2];
+    struct ofp_match match; /* Fields to match */
+    // struct ofp_instruction instructions[0]; /* Instruction set */
+};
+OFP_ASSERT(sizeof(struct ofp_flow_mod) == 56);
 
 #endif /* OPENFLOW_COMMON_H_ */

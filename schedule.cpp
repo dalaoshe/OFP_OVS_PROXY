@@ -45,25 +45,35 @@ void* Run_listen_resp(void* argv) {
 
     char buf[1024];
     int n = 0;
+    uint64_t total_resp = 0;
     while (1) {
         n = read(fd, buf, sizeof(uint64_t));
         while(n > 0) {
 
             uint64_t identify = *((uint64_t*)buf);
-//            fprintf(stderr, "\n\nRead %d byte from pipe, content:%lu\n\n", n, identify);
+            //fprintf(stderr, "\n\nRead %d byte from pipe, content:%lu\n\n", n, identify);
 
-            MsgPos pos = (*pos_map)[identify];
+            //MsgPos pos = (*pos_map)[identify];
             //fprintf(stderr, "\n\nRead %d byte from pipe, content:%lu Pos:[%d,%ld]\n\n", n, identify, pos.qid, pos.pid);
-            int marked = (*queues)[pos.qid] ->markFinished(identify, pos.pid);
+            int marked = 0 ;//(*queues)[pos.qid] ->markFinished(identify, pos.pid);
 
             if(!marked) {
                 int q_num = queues->size();
                 for(int i = 0; i < q_num; ++i) {
                     Queue* q = (*queues)[i];
-                    int marked = q->markFinished(identify);
+                    marked = q->markFinished(identify);
                     if(marked)break;
                 }
             }
+//            if(!marked) {
+//                fprintf(stderr, "\n\nRead %d byte from pipe, content:%lu No Match !!!\n\n", n, identify);
+//            }
+//
+//            if(marked) {
+//                total_resp += 1;
+//                if(total_resp % 1000 == 0)
+//                fprintf(stderr, "\n\nTotal Resp %lu \n\n", total_resp);
+//            }
 
             n = read(fd, buf, sizeof(uint64_t));
         }
@@ -81,10 +91,9 @@ int32_t Schedule::run() {
     pipeArg->listenQueue = &this->queues;
     pipeArg->pos_map = &this->pos_map;
     pthread_t pipe_t;
-    //pthread_create(&pipe_t, NULL, &Run_listen_resp, (void*)pipeArg);
 
     int32_t max_in_process = 10;
-    int on = 1, off = 0;
+
     while (1) {
 
         /* Start up Listen Response Thread */
@@ -96,12 +105,16 @@ int32_t Schedule::run() {
 
         /* Update Queue */
         int32_t clean_num = 0;
-        for(int i = 0; i < this->queue_num; ++i) {
-            Queue *q = this->queues[i];
-            //q->decMsgTime();
-            clean_num += q->cleanFinishMsg(this->mark_result_fd);
+        if(max_in_process < 2 || this->isSWToControl()) {
+            for (int i = 0; i < this->queue_num; ++i) {
+                Queue *q = this->queues[i];
+                clean_num += q->cleanFinishMsg(this->mark_result_fd);
+            }
         }
         max_in_process += clean_num;
+//        if(clean_num > 0)
+//            fprintf(stderr, "\n Clean UP %d Max_in_Process %d\n", clean_num, max_in_process);
+
 
         while(max_in_process > 0) {
             OFP_Msg* msg = NULL;
@@ -109,23 +122,47 @@ int32_t Schedule::run() {
                 Queue* q = this->queues[i];
                 msg = q->fetchMsg();
                 if(msg == NULL) continue;
-                //send msg
-                //SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&on, sizeof(on));
+
                 msg->in_process = 1;
                 gettimeofday(&msg->send, NULL);
-                Writev_nByte(msg->fd, msg->buf, msg->len);
-                //SetSocket(msg->fd, IPPROTO_TCP, TCP_CORK, (char*)&off, sizeof(off));
-                if(q->msgNeedNoTime(msg)) msg->finished = 1;
-                /* Debug: print info */
-//                struct openflow::ofp_header *header =
-//                        (struct openflow::ofp_header *)(msg->buf);
-//                if(!(header->type == openflow::OFPT_PACKET_IN)) {
-//                    fprintf(stderr, "%s:Read(OTHER_MSG,TYPE:%d) %d byte SEND to server_fd %d \n",this->name, header->type, msg->len, msg->fd);
-//                }
-//                else if(header->type == openflow::OFPT_PACKET_IN) {
-//                    fprintf(stderr, "%s:Read(PACKET_IN) %d byte SEND to server_fd %d \n",this->name, msg->len, msg->fd);
+                struct openflow::ofp_header *header =
+                        (struct openflow::ofp_header *)(msg->buf);
+
+//                if((header->type == openflow::OFPT_FLOW_MOD)) {
+//                    if(msg->uepid.uid == 1) {
+//                        msg->finished = 1;
+//                        max_in_process ++;
+//                        break;
+//                    }
 //                }
 
+
+                Writev_nByte(msg->fd, msg->buf, msg->len);
+                if(q->msgNeedNoTime(msg)) {
+                    gettimeofday(&msg->end, NULL);
+                    msg->finished = 1;
+                }
+
+                /* Debug: print info */
+
+
+//                if((header->type == openflow::OFPT_FLOW_MOD)) {
+////                    fprintf(stderr, "%s:Read(OTHER_MSG,TYPE:%d) %d byte SEND to server_fd %d \n",this->name, header->type, msg->len, msg->fd);
+//                }
+//                else if(header->type == openflow::OFPT_PACKET_IN) {
+//  //                  fprintf(stderr, "%s:Read(PACKET_IN) %d byte SEND to server_fd %d \n",this->name, msg->len, msg->fd);
+//                }
+//                else if(!(header->type == openflow::OFPT_FLOW_MOD) && !(header->type == openflow::OFPT_PACKET_OUT)
+//                        && (header->type == openflow::OFPT_ECHO_REQUEST)) {
+//  //                  fprintf(stderr, "%s Send Msg_Type:%s Priority:%lf Identify:%lu Finished:%u\n",
+//   //                         this->name, getOFPMsgType(header->type).c_str(), msg->priority, msg->identity, msg->finished);
+//                }
+//                else if(header->type == openflow::OFPT_PACKET_OUT) {
+//                   // fprintf(stderr, "PACKET OUT FINISHED : %u\n", msg->finished);
+//                }
+//                else if(!(header->type == openflow::OFPT_FLOW_MOD)) {
+//                 //   fprintf(stderr, "ELSE NOT PACKET FLOW MOD FINISHED : %u\n", msg->finished);
+//                }
                 break;
             }
             //no msg need process
@@ -133,7 +170,13 @@ int32_t Schedule::run() {
                 break;
             }
             else {
-                max_in_process--;
+                if(!this->isSWToControl()) {
+                    max_in_process--;
+                }
+                else
+                {/* Don't Schedule Sw To Controller */
+                    break;
+                }
             }
         }
     }
@@ -267,6 +310,85 @@ UEP_Msg pack_mathch_except_type(char* match_msg,
     return uep;
 }
 
+UEP_Msg copy_valid_action_to_buf(char* original_action_list, uint16_t original_action_list_len,
+                              uint16_t filter_action_type, uint8_t filter_value_tag,
+                              char* new_action_list_buf, uint16_t* new_action_list_len, uint16_t* kick_len,
+                              PolicyConfig* config) {
+    UEP_Msg uep;
+    char* original_action_start = original_action_list;
+    char* original_action_end = original_action_list + original_action_list_len;
+
+    char* new_action_start = new_action_list_buf;
+
+    uint16_t filter_lens = 0;
+
+    int con = 1;
+    while (original_action_start < original_action_end) {
+        ofp_action_header* action_header = (ofp_action_header*)original_action_start;
+        uint16_t action_type = action_header->type;
+        uint16_t action_item_len = ntohs(action_header->len);
+        char* action_item_value = (char*)&(action_header->pad);
+        original_action_start += action_item_len;
+
+
+        /* debug: print match item */
+//        fprintf(stderr, "\n%d len:%d\n"
+//                "INST PACK ACTION TYPE:%02X\n"
+//                "INST PACK LENGTH:%d\n"
+//                "INST PACK VALUE:",
+//                con,original_action_end-original_action_start, action_type, action_item_len);
+//        for(int i = 0; i < action_item_len - 4; ++i)
+//            fprintf(stderr,"%02X ",*(action_item_value+i));
+//        fprintf(stderr,"\n");
+//        con += 1;
+
+
+
+        /* found special match item, do process*/
+        if(action_type == filter_action_type) {
+            char *value = action_item_value;
+            /* debug: print tick match item */
+//            fprintf(stderr, "\n%d\n"
+//                            "INST TICK ACTION TYPE:%02X\n"
+//                            "INST TICK LENGTH:%d\n"
+//                            "INST TICK VALUE:",
+//                    con, action_type, action_item_len);
+//            for(int i = 0; i < action_item_len - 4; ++i)
+//                fprintf(stderr,"%02X",*(value+i));
+//            fprintf(stderr,"\n");
+
+            /* Update Uep */
+            UEP_Msg* uep_msg = (UEP_Msg*)(value + 4);
+            uep.uepid.eid = uep_msg->uepid.eid;
+            uep.uepid.uid = uep_msg->uepid.uid;
+            uep.window = uep_msg->window;
+            uep.number = uep_msg->number;
+            config->getPriorityManager()->updateSplitOfUEP(uep_msg->window, uep.uepid, uep_msg->number);
+         //   fprintf(stderr, "INST TICK UEP:[%02X,%02X] WindowID:%u AddNumber:%u\n",uep.uepid.eid, uep.uepid.uid, uep.window, uep.number);
+
+            filter_lens += action_item_len;
+            continue;
+        }
+
+        /* copy to buf*/
+        ofp_action_header* new_action_item = (ofp_action_header*)new_action_start;
+        new_action_item->type = action_header->type;
+        new_action_item->len = action_header->len;
+        char *new_value = (char*)&(new_action_item->pad);
+        for(int i = 0; i < action_item_len - 4; ++i)
+            *(new_value+i) = *(action_item_value + i);
+        new_action_start += action_item_len;
+    }
+
+    /* Update Inst Lens */
+    *new_action_list_len = original_action_list_len - filter_lens;
+
+    /* The Byte Num Be Removed */
+    *kick_len = (filter_lens);
+    return uep;
+
+}
+
 UEP_Msg pack_Inst_except_type(char* inst_msg,
                                 uint16_t filter_inst_type, uint16_t filter_action_type, uint8_t value_tag,
                                 char* new_action_list_buf, uint16_t* new_inst_len, uint16_t* kick_len,
@@ -278,7 +400,7 @@ UEP_Msg pack_Inst_except_type(char* inst_msg,
     uint16_t original_action_list_lens = original_inst_lens;
 
     if(ofp_inst->type != filter_inst_type) {
-        fprintf(stderr,"INST TYPE %02x %02x\n",ofp_inst->type, filter_inst_type);
+        //fprintf(stderr,"INST TYPE %02x %02x\n",ofp_inst->type, filter_inst_type);
         return uep;
     }
 
@@ -322,76 +444,17 @@ UEP_Msg pack_Inst_except_type(char* inst_msg,
         }
     }
 
-
-    char* original_action_end = inst_msg + original_action_list_lens;
     char* new_action_start = new_action_list_buf;
 
-    uint16_t filter_lens = 0;
-
-    int con = 1;
-    while (original_action_start < original_action_end) {
-        ofp_action_header* action_header = (ofp_action_header*)original_action_start;
-        uint16_t action_type = action_header->type;
-        uint16_t action_item_len = ntohs(action_header->len);
-        char* action_item_value = (char*)&(action_header->pad);
-        original_action_start += action_item_len;
-
-
-        /* debug: print match item */
-//        fprintf(stderr, "\n%d len:%d\n"
-//                "INST PACK ACTION TYPE:%02X\n"
-//                "INST PACK LENGTH:%d\n"
-//                "INST PACK VALUE:",
-//                con,original_action_end-original_action_start, action_type, action_item_len);
-//        for(int i = 0; i < action_item_len - 4; ++i)
-//            fprintf(stderr,"%02X ",*(action_item_value+i));
-//        fprintf(stderr,"\n");
-//        con += 1;
-
-
-
-        /* found special match item, do process*/
-        if(ofp_inst->type == filter_inst_type && action_type == filter_action_type) {
-            char *value = action_item_value;
-            /* debug: print tick match item */
-//            fprintf(stderr, "\n%d\n"
-//                            "INST TICK ACTION TYPE:%02X\n"
-//                            "INST TICK LENGTH:%d\n"
-//                            "INST TICK VALUE:",
-//                    con, action_type, action_item_len);
-//            for(int i = 0; i < action_item_len - 4; ++i)
-//                fprintf(stderr,"%02X",*(value+i));
-//            fprintf(stderr,"\n");
-
-            /* Update Uep */
-            UEP_Msg* uep_msg = (UEP_Msg*)(value + 4);
-            uep.uepid.eid = uep_msg->uepid.eid;
-            uep.uepid.uid = uep_msg->uepid.uid;
-            uep.window = uep_msg->window;
-            uep.number = uep_msg->number;
-            config->getPriorityManager()->updateSplitOfUEP(uep_msg->window, uep.uepid, uep_msg->number);
-            fprintf(stderr, "INST TICK UEP:[%02X,%02X] WindowID:%u AddNumber:%u\n",uep.uepid.eid, uep.uepid.uid, uep.window, uep.number);
-
-            filter_lens += action_item_len;
-            continue;
-        }
-
-        /* copy to buf*/
-        ofp_action_header* new_action_item = (ofp_action_header*)new_action_start;
-        new_action_item->type = action_header->type;
-        new_action_item->len = action_header->len;
-        char *new_value = (char*)&(new_action_item->pad);
-        for(int i = 0; i < action_item_len - 4; ++i)
-            *(new_value+i) = *(action_item_value + i);
-        new_action_start += action_item_len;
-    }
+    uint16_t new_action_list_len = 0;
+    uep = copy_valid_action_to_buf(original_action_start, original_action_list_lens,
+                                   filter_action_type, value_tag, new_action_start, &new_action_list_len, kick_len,
+                                   config);
 
     /* Update Inst Lens */
-    *new_inst_len = original_inst_lens - filter_lens;
+    *new_inst_len = original_inst_lens - *kick_len;
     ofp_inst->len = htons(*new_inst_len);
 
-    /* The Byte Num Be Removed */
-    *kick_len = (filter_lens);
 
 
     return uep;
@@ -399,12 +462,18 @@ UEP_Msg pack_Inst_except_type(char* inst_msg,
 
 
 void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
-    arg.qid = FLOW_MOD_QUEUE_ID;
+
     struct openflow::ofp_header *header =
             (struct openflow::ofp_header *)(msg);
 
     struct ofp13_flow_mod *hdr = (struct ofp13_flow_mod *) (msg + sizeof(struct openflow::ofp_header));
-    arg.identify = hdr->cookie;
+    if(hdr->command != openflow::OFPFC_ADD) {
+        arg.identify = hdr->cookie;
+        arg.qid = IMPORTANT_QUEUE_ID;
+        return;
+    }
+
+
     //fprintf(stderr, "RECEIVE FLOW MOD COOKIE:%lu \n", arg.identify);
 
     uint16_t total_length = ntohs(*(uint16_t*)(((char*)&(hdr->match)) + 2));
@@ -419,37 +488,18 @@ void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
     char *match_item = ((char*)&(hdr->match))+ 4;
     bool has_inst = ntohs(header->length) - sizeof(struct openflow::ofp_header) - sizeof(struct ofp13_flow_mod) - total_length >= 2;
     char *ins = (((char *) &(hdr->match)) + total_length);
-//                int con  = 0;
-//                while (match_item < ins - (8 - pad)) {
-//                    ofp_match_items* item = (ofp_match_items*)match_item;
-//                    char *value = (char*)&(item->value);
-//                    fprintf(stderr, "\n%d\n"
-//                            "OLD CLASS:%02X\n"
-//                            "OLD FIELD:%02X\n"
-//                            "OLD LENGTH:%d\n"
-//                            "OLD VALUE:",
-//                            con, item->oxm_class, item->oxm_field_id,  item->length );
-//                    for(int i = 0; i < item->length; ++i)
-//                    fprintf(stderr,"%02X",*(value+i));
-//                    fprintf(stderr,"\n");
-//                    con += 1;
-//
-//                    match_item += 4 + item->length;
-//                }
 
     /* copy true match item to buf */
-    char* buf = new char[total_length];
-    memset(buf, 0, total_length);
+    memset(schedule->filter_buf, 0, total_length+10);
     uint16_t new_len = 0, except_len = 0;
-    UEP_Msg uep = pack_mathch_except_type(((char*)&(hdr->match)), 0x8000, 0x36, 0x7F, buf, &new_len, &except_len, schedule->getConf());
+    UEP_Msg uep = pack_mathch_except_type(((char*)&(hdr->match)), 0x8000, 0x36, 0x7F, schedule->filter_buf, &new_len, &except_len, schedule->getConf());
     arg.priority = schedule->getConf()->getPriorityManager()->getUEPPriorityOfSplitK(uep.window, uep.uepid);
     arg.uepid = uep.uepid;
     //fprintf(stderr, "Match UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
-
     header->length = htons(ntohs(header->length) - except_len);
     /* copy buf match to msg*/
     for(int i = 0; i < new_len; ++i) {
-        *(((char*)&(hdr->match)) + i) = buf[i];
+        *(((char*)&(hdr->match)) + i) = schedule->filter_buf[i];
     }
     /* copy instruction to valid place*/
     if(has_inst) {
@@ -457,90 +507,106 @@ void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
         for (int i = 0; i < inst_len; ++i) {
             *(((char*)&(hdr->match)) + i + new_len) = ins[i];
         }
-        fprintf(stderr, "\n\nFlow_Mod Inst Len:%u\n", inst_len);
     }
 
-    /* debug: print after copy match content*/
-//                total_length = ntohs(*(uint16_t*)(buf + 2));
-//                total_length += 4;
-//                fprintf(stderr, "\nnew match len:%u \n", total_length);
-//                match_item = buf+ 4;
-//                ins = (buf + total_length);
-//                con = 0;
-//                while (match_item < ins - 4) {
-//                    ofp_match_items* item = (ofp_match_items*)match_item;
-//                    char *value = (char*)&(item->value);
-//                    fprintf(stderr, "\n%d\n"
-//                            "NEW CLASS:%02X\n"
-//                            "NEW FIELD:%02X\n"
-//                            "NEW LENGTH:%d\n"
-//                            "NEW VALUE:",
-//                            con, item->oxm_class, item->oxm_field_id,  item->length );
-//                    for(int i = 0; i < item->length; ++i)
-//                        fprintf(stderr,"%02X",*(value+i));
-//                    fprintf(stderr,"\n");
-//                    con += 1;
-//                    match_item += 4 + item->length;
-//                }
 
 
-    /* debug: print pay load and total len*/
-//                fprintf(stderr, "Now Pay load\n");
-//                for(int i = 0; i < ntohs(header->length); ++i) {
-//                    fprintf(stderr,"%02X ",*(msg+i));
-//                    if((i+1) % 16 == 0) fprintf(stderr, "\n");
-//                }
-//                fprintf(stderr, "\n");
-//
-//                fprintf(stderr, "\n\nNow Header Len:%u \n\n", ntohs(header->length));
-
-    /* release buf */
-    delete buf;
+    // fprintf(stderr, "\n\nFlow_Mod Inst Len:%u\n", inst_len);
     /* Pack And Filter Inst */
-
     if(has_inst) {
-
         char* inst_start = (((char*)&(hdr->match)) +  new_len);
         ofp_instruction* inst_header = (ofp_instruction*)inst_start;
-
         uint16_t new_inst_len = ntohs(inst_header->len), filter_len = 0;
-        buf = new char[new_inst_len];
-        memset(buf, 0, new_inst_len);
-
-        UEP_Msg uep = pack_Inst_except_type(inst_start,
+        memset(schedule->filter_buf, 0, new_inst_len+10);
+        uep = pack_Inst_except_type(inst_start,
                                             0x0400, 0x1900, 0xFF,
-                                            buf, &new_inst_len, &filter_len,
+                                            schedule->filter_buf, &new_inst_len, &filter_len,
                                             schedule->getConf());
         arg.priority = schedule->getConf()->getPriorityManager()->getUEPPriorityOfSplitK(uep.window, uep.uepid);
         arg.uepid = uep.uepid;
-        fprintf(stderr, "Inst UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
+        arg.identify = hdr->cookie;
+
+        if(arg.priority > 0.5) {
+            arg.qid = FLOW_MOD_QUEUE_1_ID;
+        }
+        else{
+            arg.qid = FLOW_MOD_QUEUE_2_ID;
+        }
+
         header->length = htons(ntohs(header->length) - filter_len);
         /* copy buf action to msg*/
-
         if(filter_len > 0)
             for(int i = 0; i < new_inst_len - 4 ; ++i) {
-                *(inst_start + 8 + i) = buf[i];
+                *(inst_start + 8 + i) = schedule->filter_buf[i];
             }
 
+
+        /* Debug:priority */
+        //fprintf(stderr, "Flow Mod Inst UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
         /* Debug: Print Payload */
+
 //        fprintf(stderr, "Inst Payload New\n");
 //        for(int i = 0; i < ntohs(header->length); ++i) {
 //            fprintf(stderr,"%02X ",*(msg+i));
 //            if((i+1) % 16 == 0) fprintf(stderr, "\n");
 //        }
 //        fprintf(stderr, "\n");
-        delete buf;
     }
-
-    arg.uepid = uep.uepid;
 
 }
 void do_ofp_packetout_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
-    arg.qid = PO_QUEUE_ID;
+    arg.qid = IMPORTANT_QUEUE_ID;
     struct openflow::ofp_header *header =
             (struct openflow::ofp_header *)(msg);
     ofp_packet_out* packet_out = (ofp_packet_out*)msg;
+
     char* action = (char*)(&packet_out->actions);
+    char* original_data_satrt = action + ntohs(packet_out->actions_len);
+    uint16_t original_action_list_lens = ntohs(packet_out->actions_len);
+    uint16_t original_data_lens = ntohs(header->length) - original_action_list_lens - 24;
+    memset(schedule->filter_buf, 0, 500);
+
+    char* buf = schedule->filter_buf;
+    uint16_t new_action_list_len = 0;
+    uint16_t filter_len = 0;
+    UEP_Msg uep = copy_valid_action_to_buf(action, original_action_list_lens,
+                                                 0x1900, 0xFF, buf, &new_action_list_len, &filter_len,
+                                                 schedule->getConf());
+    /* copy buf action to msg*/
+    if(filter_len > 0) {
+        for (int i = 0; i < new_action_list_len; ++i) {
+            *(action + i) = schedule->filter_buf[i];
+        }
+        /* copy data to data */
+        char* new_data_start = action + new_action_list_len;
+        for (int i = 0; i < original_data_lens; ++i) {
+            *(new_data_start + i) = original_data_satrt[i];
+        }
+        header->length = htons(ntohs(header->length) - filter_len);
+        packet_out->actions_len = htons(new_action_list_len);
+
+        arg.priority = schedule->getConf()->getPriorityManager()->getUEPPriorityOfSplitK(uep.window, uep.uepid);
+        arg.uepid = uep.uepid;
+        if(arg.priority > 0.5) {
+            arg.qid = PO_QUEUE_1_ID;
+        }
+        else{
+            arg.qid = PO_QUEUE_2_ID;
+        }
+        /* Debug:priority */
+      //  fprintf(stderr, "Packet OUT UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
+    }
+    /* Debug: Print Payload */
+//    if(filter_len > 0) {
+//        fprintf(stderr, "Packout Payload New\n");
+//        for (int i = 0; i < ntohs(header->length); ++i) {
+//            fprintf(stderr, "%02X ", *(msg + i));
+//            if ((i + 1) % 16 == 0) fprintf(stderr, "\n");
+//        }
+//        fprintf(stderr, "\n");
+//    }
+
+    //packet_out-
     char* eth_data = action + ntohs(packet_out->actions_len);
     uint16_t *type = (uint16_t*)(eth_data + 12);
     uint16_t e_type = ntohs(*type);
@@ -549,20 +615,18 @@ void do_ofp_packetout_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule)
         arg.qid = LLDP_QUEUE_ID;
         arg.priority = 0xFF;
         arg.identify = header->xid;
+        //fprintf(stderr, "\n\nLLDP\n\n");
         arg.max_wait_time = arg.process_time = 0;
-    } else {
-        arg.qid = PO_QUEUE_ID;
     }
 }
 void do_ofp_packetin_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
     arg.qid = PI_QUEUE_ID;
+
     struct openflow::ofp_header *header =
             (struct openflow::ofp_header *)(msg);
     ofp_packet_in* packet_in = (ofp_packet_in*)msg;
     char* match = (char*)(&packet_in->match);
 
-
-    //uint16_t match_total_length = ntohs(packet_in->match.length) ;
     uint16_t match_total_length = getMatchLenth(match);
     uint16_t pad_len = 2;
 
@@ -577,14 +641,13 @@ void do_ofp_packetin_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) 
     } else {
         arg.qid = PI_QUEUE_ID;
     }
+
 }
 //todo
 OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
     OFP_Msg_Arg arg;
     struct openflow::ofp_header *header =
             (struct openflow::ofp_header *)(msg);
-    int32_t msg_len = be16toh(header->length);
-    uint32_t xid = header->xid;
     arg.max_wait_time = arg.process_time = 1;
     arg.priority = 1;
 
@@ -629,9 +692,12 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
 
             this->other->setDpid(this->dp_id);
             this->other->setGet_dp_id(1);
+            break;
         }
         default: {
-            arg.qid = MSG_QUEUE_ID;
+       //     if(header->type == openflow::OFPT_ECHO_REQUEST)
+      //      fprintf(stderr, "%s Other UEP:[%02X,%02X] Msg_Type:%s Priority:%lf Identify:%lu \n",this->name, arg.uepid.eid, arg.uepid.uid, getOFPMsgType(header->type).c_str() , arg.priority, arg.identify);
+            arg.qid = IMPORTANT_QUEUE_ID;
         }
     }
     arg.len = ntohs(header->length);
