@@ -56,6 +56,11 @@ public:
     bool aheadofHead(uint32_t index) {
         return index < head;
     }
+
+    bool aheadoftail(uint32_t index) {
+        return index < tail;
+    }
+
     bool updateData(uint32_t index, T data) {
         this->buffer[index % this->buffer_size] = data;
     }

@@ -32,28 +32,30 @@ void* read_client(void* argv) {
 
     char buf[65539];
     int count = 0;
+    char endpoint[] = "client";
     while (1) {
         //memset(buf, 0, sizeof(buf));
         //int cn = read(client_fd, buf, 2048);
-        int cn = read_ofp_msg(client_fd, buf, port, "client");
+
+        int cn = read_ofp_msg(client_fd, buf, port, endpoint);
         if (cn < 0) {
             fprintf(stderr, "port:%d read client sockfd %d error: %s \n",port, client_fd, strerror(errno));
             Close(client_fd);
             Close(server_fd);
 
             if(pthread_kill(server_tid, SIGUSR1) != 0) {
-                fprintf(stderr, "port:%d, kill server thread %d error: %s \n",port, server_tid, strerror(errno));
+                fprintf(stderr, "port:%d, kill server thread %lu error: %s \n",port, server_tid, strerror(errno));
             }
-            fprintf(stderr, "kill server thread %d error: %s \n", server_tid, strerror(errno));
+            fprintf(stderr, "kill server thread %lu error: %s \n", server_tid, strerror(errno));
             break;
         } else if (cn == 0) {
             fprintf(stderr, "port:%d client try to close sockfd %d \n",port, client_fd);
             Close(client_fd);
             Close(server_fd);
             if(pthread_kill(server_tid, SIGUSR1) != 0) {
-                fprintf(stderr, "kill server thread %d error: %s \n", server_tid, strerror(errno));
+                fprintf(stderr, "kill server thread %lu error: %s \n", server_tid, strerror(errno));
             }
-            fprintf(stderr, "kill server thread %d error: %s \n", server_tid, strerror(errno));
+            fprintf(stderr, "kill server thread %lu error: %s \n", server_tid, strerror(errno));
             break;
         } else {
             client_to_server_schedule->putMessage(buf, cn, server_fd);
@@ -79,8 +81,9 @@ void* read_server(void* argv) {
 
     char buf[65539];
     signal(SIGUSR1, signal_handler);
+    char endpoint[] = "server";
     while(1) {
-        int sn = read_ofp_msg(server_fd, buf, port, "server");
+        int sn = read_ofp_msg(server_fd, buf, port, endpoint);
         if (sn < 0) {
             fprintf(stderr, "port:%d read server sockfd %d error: %s \n",port, server_fd, strerror(errno));
             Close(client_fd);
@@ -143,7 +146,6 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             Socket_Peer_Connect(server_fd, (SA*)&server, len);
 
             /* Forbidden Nagle's algorithm */
-            int on = 1;
             SetSocket(server_fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
             SetSocket(client_fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
             SetSocket(client_fd, IPPROTO_TCP, TCP_QUICKACK, &on, sizeof(on));
@@ -200,13 +202,13 @@ void do_tcp_tunnel(char* serverip, char* serverport, char* tunnelport) {
             pthread_create(&t_client, NULL, &read_client, (void*)&tun);
 
 
-            fprintf(stderr, "port:%d tunnel wait client_thread close \n",ntohs(client.sin_port), strerror(errno));
+            fprintf(stderr, "port:%d tunnel wait client_thread close \n",ntohs(client.sin_port));
             pthread_join(t_client, NULL);
 
-            fprintf(stderr, "port:%d tunnel wait server_thread close \n",ntohs(client.sin_port), strerror(errno));
+            fprintf(stderr, "port:%d tunnel wait server_thread close \n",ntohs(client.sin_port));
             pthread_join(t_server, NULL);
 
-            fprintf(stderr, "port:%d tunnel close \n",ntohs(client.sin_port), strerror(errno));
+            fprintf(stderr, "port:%d tunnel close \n",ntohs(client.sin_port));
             delete server_to_client_schedule;
             delete client_to_server_schedule;
             exit(0);

@@ -24,18 +24,18 @@ class MyTreeTopo( Topo ):
         for i in range(1, 3):
             s.append(self.addSwitch('s%s' % str(i)))
 
-        self.addLink(s[0], s[1], bw=1000, max_queue_size=100000)
-        self.addLink(s[0], s[1], bw=1000, max_queue_size=100000)
+        self.addLink(s[0], s[1], bw=1000, max_queue_size=10000)
+        self.addLink(s[0], s[1], bw=1000, max_queue_size=10000)
 
         for i in range(1, 3):
             host = self.addHost('h%s' % str(i))
             h.append(host)
-            self.addLink(host, s[0], bw=1000, max_queue_size=100000)
+            self.addLink(host, s[0], bw=1000, max_queue_size=10000)
 
         for i in range(1, 3):
             host = self.addHost('h%s' % str(i + 2))
             h.append(host)
-            self.addLink(host, s[1], bw=1000, max_queue_size=100000)
+            self.addLink(host, s[1], bw=1000, max_queue_size=10000)
         #self.add
         #self.addLink()
 

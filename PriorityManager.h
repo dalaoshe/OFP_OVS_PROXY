@@ -8,6 +8,8 @@
 #include "RingBuffer.h"
 #include <map>
 #include <math.h>
+#include <pyport.h>
+
 struct Split{
     struct UEPID{
         uint8_t uid;
@@ -63,15 +65,17 @@ class PriorityManager {
     RingBuffer<Split>* windowBuffer;
     uint32_t  windowSize;
     uint32_t bufferSize;
+    timeval start;
 public:
     PriorityManager(uint32_t windowSize, uint32_t bufferSize) {
         this->windowSize = windowSize;
         this->bufferSize = bufferSize;
         this->windowBuffer = new RingBuffer<Split>(this->bufferSize, this->windowSize);
+        gettimeofday(&this->start, NULL);
     }
 
     void updateSplitOfUEP(uint32_t splitId, Split::UEPID uep, uint32_t number) {
-        if(this->windowBuffer->aheadofHead(splitId)) {
+        if(this->windowBuffer->aheadofHead(splitId) || !this->windowBuffer->aheadoftail(splitId)) {
             Split split;
             split.addUEP(uep, number);
             this->windowBuffer->putdData(split);
@@ -102,6 +106,16 @@ public:
     double getUEPPriorityOfSplitK(uint32_t splitId, Split::UEPID uep) {
         double ratio = getUEPRatioOfSplitK(splitId, uep);
         return convertRatioToPriority(ratio);
+    }
+
+    uint16_t getNowWindowId() {
+        timeval end;
+        gettimeofday(&end, NULL);
+        double s = end.tv_sec - this->start.tv_sec;
+        double us = end.tv_usec - this->start.tv_usec;
+        double ms = s * 1000.0 + us / 1000.0;
+        uint16_t wid = uint16_t((ms / 100)) ;//% (this->bufferSize);
+        return wid;
     }
 };
 

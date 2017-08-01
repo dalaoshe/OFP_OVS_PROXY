@@ -85,7 +85,7 @@ bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2);
 #define MULTI_PART_REPLY_QUEUE_ID 1
 #define MSG_QUEUE_ID 2
 
-//controller to switch
+controller to switch
 #define IMPORTANT_QUEUE_ID 0
 #define LLDP_QUEUE_ID 0
 #define FLOW_MOD_QUEUE_1_ID 1
@@ -95,9 +95,18 @@ bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2);
 #define MULTI_PART_REQUEST_QUEUE_ID 0
 #define LEAST_QUEUE_ID 9
 
+//#define IMPORTANT_QUEUE_ID 0
+//#define LLDP_QUEUE_ID 0
+//#define FLOW_MOD_QUEUE_1_ID 0
+//#define PO_QUEUE_1_ID 0
+//#define FLOW_MOD_QUEUE_2_ID 0
+//#define PO_QUEUE_2_ID 0
+//#define MULTI_PART_REQUEST_QUEUE_ID 0
+//#define LEAST_QUEUE_ID 9
+
 #define LLDP_TYPE 0x88cc
 #define ARP 0x806
-
+class Schedule;
 class Queue {
     pthread_mutex_t queue_mutex;
     //std::queue<OFP_Msg*> msg_queue;
@@ -174,7 +183,6 @@ public:
                && this->msg_queue[i]->identity == identify) {
                 this->msg_queue[i]->finished = 1;
                 gettimeofday(&this->msg_queue[i]->end, NULL);
-                //fprintf(stderr, "\n\nHas Find Identify:%lu  \n\n", identify);
                 pthread_mutex_unlock(&this->queue_mutex);
                 return 1;
                 fprintf(stderr, "\n\n need time %d \n\n", this->msg_queue[i]->process_time);
@@ -211,7 +219,7 @@ public:
         }
         else if(msg->header->type == rofl::openflow::OFPT_FLOW_MOD &&
                 msg->identity != 0) {
-          //            fprintf(stderr, "Didn find(PACKET_TYPE):%d  cookies:%lu \n",
+          //  fprintf(stderr, "Didn find(PACKET_TYPE):%d  cookies:%lu \n",
           //  msg->header->type, msg->identity);
         }
         pthread_mutex_unlock(&this->queue_mutex);
@@ -219,60 +227,7 @@ public:
     }
 
     //pop and get number of finished msgs
-    int32_t cleanFinishMsg(FILE* mark) {
-        pthread_mutex_lock(&this->queue_mutex);
-        uint64_t num = this->msg_queue.size();
-        int32_t count = 0;
-        for(uint64_t i = 0,index = 0; i < num; ++i,++index) {
-            //fprintf(stderr, "\n\n packet need time %d in process %d \n\n", this->msg_queue[index]->process_time, this->msg_queue[index]->in_process);
-
-            if((this->msg_queue[index]->in_process) && (this->msg_queue[index]->finished == 1)) {
-                double s = this->msg_queue[index]->end.tv_sec - this->msg_queue[index]->recv.tv_sec;
-                double us = this->msg_queue[index]->end.tv_usec - this->msg_queue[index]->recv.tv_usec;
-                double s2 = this->msg_queue[index]->send.tv_sec - this->msg_queue[index]->recv.tv_sec;
-                double us2 = this->msg_queue[index]->send.tv_usec - this->msg_queue[index]->recv.tv_usec;
-
-                double ms = s * 1000.0 + us / 1000.0;
-                double ms2 = s2 * 1000.0 + us2 / 1000.0;
-                if(this->msg_queue[index]->uepid.uid != 0) {
-                    if(this->msg_queue[index]->uepid.uid == 2 || this->msg_queue[index]->uepid.uid == 4) {
-                        char temp[300];
-//                        size_t  n = sprintf(temp, "UEP:[%02X, %02X] Identify:%lu Used Time:%lf ms Send Time:%lf ms\n",
-//                                this->msg_queue[index]->uepid.eid,
-//                                this->msg_queue[index]->uepid.uid, this->msg_queue[index]->identity, ms, ms2);
-                        fprintf(stderr,"UEP:[%02X, %02X] Msg_Type:%s Identify:%lu Used Time:%lf ms Send Time:%lf ms\n",
-                                this->msg_queue[index]->uepid.eid,
-                                this->msg_queue[index]->uepid.uid,
-                                getOFPMsgType(this->msg_queue[index]->ofp_type).c_str(),
-                                this->msg_queue[index]->identity, ms, ms2);
-
-                        fprintf(mark,"UEP:[%02X, %02X] Msg_Type:%s Identify:%lu Used Time:%lf ms Send Time:%lf ms\n",
-                                this->msg_queue[index]->uepid.eid,
-                                this->msg_queue[index]->uepid.uid,
-                                getOFPMsgType(this->msg_queue[index]->ofp_type).c_str(),
-                                this->msg_queue[index]->identity, ms, ms2);
-                        //fflush(mark);
-                        //write(mark->_fileno, temp, n);
-                    }
-                    //fflush(mark);
-                   // fprintf(stderr, "Resp Identify:%lu Used Time:%lf ms\n", this->msg_queue[index]->identity, ms);
-                }
-
-                delete this->msg_queue[index];
-                this->msg_queue.erase(this->msg_queue.begin() + index);
-                --index;
-                ++count;
-            }
-            else {
-//                fprintf(stderr, "\n\n packet need time %d in process %d \n\n", this->msg_queue[index]->process_time, this->msg_queue[index]->in_process);
-            }
-            //fprintf(stderr, "\n\n clean count %d \n\n", count);
-        }
-
-
-        pthread_mutex_unlock(&this->queue_mutex);
-        return count;
-    }
+    int32_t cleanFinishMsg(FILE* mark, Schedule* schedule);
     //get max priority msg who not in process
     OFP_Msg* fetchMsg() {
         pthread_mutex_lock(&this->queue_mutex);
@@ -326,49 +281,14 @@ struct UEP_Msg{
 
 }__attribute__((packed));
 
-struct Policy{
-    uint16_t oxm_class;
-    uint8_t oxm_field_id;//TLV TYPE
-    //uint8_t oxm_has_mask;
-    uint8_t length;//TLV L
-    uint8_t* value;//TLV value
-
-    struct policy_id{
-        uint8_t app_id;
-        uint8_t user_id;
-        bool operator < (const policy_id& id) const {
-            return app_id < id.app_id || (app_id == id.app_id && user_id < id.user_id);
-        }
-    }p_id;
-    uint8_t priority;
-
-    Policy(uint8_t length, uint8_t* value) {
-        this->value = new uint8_t[length];
-        this->length = length;
-        for(int i = 0; i < length; ++i) {
-            this->value[i] = value[i];
-        }
-    }
-    ~Policy() {
-        delete value;
-    }
-};
 
 
-#define MAX_POLICY_MSG_DATA 1024
-struct PolicyMsg {
-    int8_t type;
-    int8_t policy_num;
-    int16_t byte_len;
-    char data[MAX_POLICY_MSG_DATA];
-};
 
 #define CONFIG_PORT 5656
 class PolicyConfig {
     sockaddr_in server;
     int32_t config_fd;
     int16_t server_port;
-    std::map<Policy::policy_id , Policy*> policies;
     PriorityManager *priorityManager;
     pthread_mutex_t policy_mutex = PTHREAD_MUTEX_INITIALIZER;
 public:
@@ -384,32 +304,10 @@ public:
         Bind_Socket(this->config_fd, (SA*)&this->server, len);
     }
     void initPriorityManager() {
-        this->priorityManager = new PriorityManager(5, 20);
-    }
-    int32_t listenRequest();
-    std::map<Policy::policy_id , Policy*>* getAllPolices() {
-        return &(this->policies);
-    }
-    void updatePolicy(Policy::policy_id pid,  uint8_t* value) {
-
-    }
-    bool hasPolicy(Policy::policy_id pid) {
-        std::map<Policy::policy_id , Policy*>::iterator iter;
-        iter = this->policies.find(pid);
-        if(iter != this->policies.end()) return 1;
-        return 0;
-    }
-    int addPolicy(Policy::policy_id pid, Policy* policy) {
-        this->policies.insert(std::pair<Policy::policy_id , Policy*>(pid, policy));
+        this->priorityManager = new PriorityManager(1, 20);
     }
     PriorityManager* getPriorityManager() { return this->priorityManager; }
 
-    Policy* getPolicy(Policy::policy_id pid) {
-        std::map<Policy::policy_id , Policy*>::iterator iter;
-        iter = this->policies.find(pid);
-        if(iter != this->policies.end()) return iter->second;
-        return NULL;
-    }
 };
 
 struct MsgPos{
@@ -454,6 +352,31 @@ public:
         this->resp_pipe[lens] = this->dp_id;
         this->resp_pipe[lens+1] = 0;
     }
+    void recordMsgProcessedTime(OFP_Msg* msg) {
+        double s = msg->end.tv_sec - msg->recv.tv_sec;
+        double us = msg->end.tv_usec - msg->recv.tv_usec;
+        double s2 = msg->send.tv_sec - msg->recv.tv_sec;
+        double us2 = msg->send.tv_usec - msg->recv.tv_usec;
+        double ms = s * 1000.0 + us / 1000.0;
+        double ms2 = s2 * 1000.0 + us2 / 1000.0;
+        if(msg->uepid.uid != 0) {
+            //if(msg->uepid.uid == 2 || msg->uepid.uid == 4) {
+                fprintf(stderr,"UEP:[%02X,%02X]\tMsg_Type:%s\tIdentify:%lu\tUsed Time:%lf\tSend Time:%lf\t\n",
+                        msg->uepid.eid,
+                        msg->uepid.uid,
+                        getOFPMsgType(msg->ofp_type).c_str(),
+                        msg->identity, ms, ms2);
+
+                fprintf(this->mark_result_fd,"UEP:[%02X,%02X]\tMsg_Type:%s\tIdentify:%lu\tUsed Time:%lf\tSend Time:%lf\t\n",
+                        msg->uepid.eid,
+                        msg->uepid.uid,
+                        getOFPMsgType(msg->ofp_type).c_str(),
+                        msg->identity, ms, ms2);
+                //fflush(mark);
+                //write(mark->_fileno, temp, n);
+            //}
+        }
+    }
     bool isSWToControl() {
         return !(strcmp(this->name, "SERVER") == 0);
     }
@@ -485,7 +408,7 @@ public:
                 q = new Queue(-1);
             }
             else {
-                q = new Queue(i * 20);
+                q = new Queue(i * 2);
             }
             queues.push_back(q);
         }

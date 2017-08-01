@@ -27,7 +27,7 @@ function pg() {
 
     BASIC_DELAY=1000000000 #1pps
 	BASIC_SPEED=1    
-	SEND_TOTAL_TIME=10
+	SEND_TOTAL_TIME=60
 	BLOCK_TIME=5
 	DATA=a.txt
     	
@@ -59,10 +59,10 @@ pgset "udp_dst_max 6555"
    
     SPEED=2
     echo "Running... ctrl^C to stop"
-    for (( i=1; i<10000; i++ ));do
+    for (( i=1; i<2; i++ ));do
 	PGDEV=/proc/net/pktgen/h1-eth0
 	
-	SPEED=`expr 2000`
+	SPEED=`expr 1000`
 #+ $SPEED`
 	DELAY=`expr ${BASIC_DELAY} / $SPEED`
 	PPS=`expr ${SPEED} \* ${BASIC_SPEED}`
@@ -71,6 +71,7 @@ pgset "udp_dst_max 6555"
 	    PPS=50000000
 	fi
 	PKT_COUNT=`expr $SEND_TOTAL_TIME \* $PPS`
+	#PKT_COUNT=1000
 	echo "${PPS}/pps,send ${PKT_COUNT}pkt"
 	
 	pgset "count $PKT_COUNT"

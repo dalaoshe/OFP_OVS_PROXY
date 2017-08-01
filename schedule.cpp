@@ -108,7 +108,7 @@ int32_t Schedule::run() {
         if(max_in_process < 2 || this->isSWToControl()) {
             for (int i = 0; i < this->queue_num; ++i) {
                 Queue *q = this->queues[i];
-                clean_num += q->cleanFinishMsg(this->mark_result_fd);
+                clean_num += q->cleanFinishMsg(this->mark_result_fd, this);
             }
         }
         max_in_process += clean_num;
@@ -259,12 +259,14 @@ UEP_Msg pack_mathch_except_type(char* match_msg,
 //            fprintf(stderr,"\n");
 
             /* Update Uep */
-            UEP_Msg* uep_msg = (UEP_Msg*)value;
-            uep.uepid.eid = uep_msg->uepid.eid;
-            uep.uepid.uid = uep_msg->uepid.uid;
-            uep.window = uep_msg->window;
-            uep.number = uep_msg->number;
-            config->getPriorityManager()->updateSplitOfUEP(uep_msg->window, uep.uepid, uep_msg->number);
+//            UEP_Msg* uep_msg = (UEP_Msg*)value;
+//            uep.uepid.eid = uep_msg->uepid.eid;
+//            uep.uepid.uid = uep_msg->uepid.uid;
+//            //uep.window = uep_msg->window;
+//            uep.window = config->getPriorityManager()->getNowWindowId();
+//
+//            uep.number = uep_msg->number;
+//            config->getPriorityManager()->updateSplitOfUEP(uep.window, uep.uepid, uep.number);
             //fprintf(stderr, "UEP:[%02X,%02X] WindowID:%u AddNumber:%u\n",uep.uepid.eid, uep.uepid.uid, uep.window, uep.number);
 
 
@@ -361,10 +363,12 @@ UEP_Msg copy_valid_action_to_buf(char* original_action_list, uint16_t original_a
             UEP_Msg* uep_msg = (UEP_Msg*)(value + 4);
             uep.uepid.eid = uep_msg->uepid.eid;
             uep.uepid.uid = uep_msg->uepid.uid;
-            uep.window = uep_msg->window;
+            //uep.window = uep_msg->window;
+            uep.window = config->getPriorityManager()->getNowWindowId();
+
             uep.number = uep_msg->number;
-            config->getPriorityManager()->updateSplitOfUEP(uep_msg->window, uep.uepid, uep_msg->number);
-         //   fprintf(stderr, "INST TICK UEP:[%02X,%02X] WindowID:%u AddNumber:%u\n",uep.uepid.eid, uep.uepid.uid, uep.window, uep.number);
+            config->getPriorityManager()->updateSplitOfUEP(uep.window, uep.uepid, uep.number);
+            //fprintf(stderr, "INST TICK UEP:[%02X,%02X] WindowID:%u AddNumber:%u\n",uep.uepid.eid, uep.uepid.uid, uep.window, uep.number);
 
             filter_lens += action_item_len;
             continue;
@@ -542,7 +546,7 @@ void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
 
 
         /* Debug:priority */
-        //fprintf(stderr, "Flow Mod Inst UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
+        fprintf(stderr, "Flow Mod Inst UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
         /* Debug: Print Payload */
 
 //        fprintf(stderr, "Inst Payload New\n");
@@ -594,7 +598,7 @@ void do_ofp_packetout_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule)
             arg.qid = PO_QUEUE_2_ID;
         }
         /* Debug:priority */
-      //  fprintf(stderr, "Packet OUT UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
+        fprintf(stderr, "Packet OUT UEP:[%02X,%02X] WindowID:%u Number:%u Priority:%lf\n",arg.uepid.eid, arg.uepid.uid, uep.window, uep.number, arg.priority );
     }
     /* Debug: Print Payload */
 //    if(filter_len > 0) {
@@ -667,6 +671,10 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
         case openflow::OFPT_STATS_REQUEST: {
             arg.qid = MULTI_PART_REQUEST_QUEUE_ID;
             arg.identify = ntohl(header->xid);
+
+            arg.uepid.uid = 0x56;
+            arg.uepid.eid = 0x55;
+            arg.priority = this->getConf()->getPriorityManager()->getUEPPriorityOfSplitK(1, arg.uepid);
            // fprintf(stderr, "RECEIVE FLOW REQUEST COOKIE:%lu \n", arg.identify);
             break;
         }
@@ -677,7 +685,6 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
             //mark request
             Queue* q = (*this->other_queues)[MULTI_PART_REQUEST_QUEUE_ID];
             int marked = q->markFinished(arg.identify);
-
             break;
         }
         case openflow::OFPT_FEATURES_REPLY: {
@@ -710,55 +717,31 @@ int32_t PolicyConfig::setupConf(uint16_t server_port) {
     initPriorityManager();
 }
 
-int32_t PolicyConfig::listenRequest() {
-    PolicyMsg msg, response;
-    size_t max_len = sizeof(msg);
-    memset(&msg, 0, sizeof(msg));
-    sockaddr_in client;
-    socklen_t len = sizeof(client);
-    int flag = 0;
-    while(1) {
-        ssize_t n = recvfrom(this->config_fd, (char*)&msg, max_len, flag, (SA*)&client, &len);
-        if(n == 0) {
-            fprintf(stderr, "RECEV 0 BYTE\n");
-            continue;
-        }
-        if(n < 0) {
-            fprintf(stderr, "RECEV ERROR\n");
-            continue;
+
+int32_t Queue::cleanFinishMsg(FILE* mark, Schedule* schedule) {
+    pthread_mutex_lock(&this->queue_mutex);
+    uint64_t num = this->msg_queue.size();
+    int32_t count = 0;
+    for(uint64_t i = 0,index = 0; i < num; ++i,++index) {
+    //fprintf(stderr, "\n\n packet need time %d in process %d \n\n", this->msg_queue[index]->process_time, this->msg_queue[index]->in_process);
+        if((this->msg_queue[index]->in_process) && (this->msg_queue[index]->finished == 1)) {
+           // if(this->msg_queue[index]->uepid.uid != 1) {
+                //if(this->msg_queue[index]->uepid.uid == 2 || this->msg_queue[index]->uepid.uid == 4) {
+                    schedule->recordMsgProcessedTime(this->msg_queue[index]);
+                //}
+           // }
+            delete this->msg_queue[index];
+            this->msg_queue.erase(this->msg_queue.begin() + index);
+            --index;
+            ++count;
         }
         else {
-            if(msg.type == POLICY_ADD) {
-                char *buf = msg.data;
-
-                for (int i = 0; i < msg.policy_num; ++i) {
-                    Policy *temp = (Policy *) buf;
-//                    int32_t policy_len = temp->h.match_len + sizeof(temp->h);
-//                    char *data = new char[policy_len];
-//                    for (int i = 0; i < policy_len; ++i) {
-//                        data[i] = buf[i];
-//                    }
-//                    Policy *policy = (Policy *) data;
-//                    this->policies.push_back(policy);
-                }
-
-                response.policy_num = 0;
-                response.type = POLICY_RESPONSE;
-                response.byte_len = sizeof(PolicyMsg);
-                response.data[0] = 0;
-                response.data[1] = 0;
-                response.data[2] = 0;
-                response.data[3] = 0;
-                ssize_t r = sendto(this->config_fd, (char*)&response, response.byte_len, flag, (SA*)&client, len);
-                if(r <= 0) {
-                    fprintf(stderr, "SEND ERROR\n");
-                }
-            }
+        //                fprintf(stderr, "\n\n packet need time %d in process %d \n\n", this->msg_queue[index]->process_time, this->msg_queue[index]->in_process);
         }
     }
+    pthread_mutex_unlock(&this->queue_mutex);
+    return count;
 }
-
-
 
 bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2) {
     if(t1.max_wait_time <= 0 && t2.max_wait_time > 0) {
