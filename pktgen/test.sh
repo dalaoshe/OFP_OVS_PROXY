@@ -62,7 +62,7 @@ pgset "udp_dst_max 6555"
     for (( i=1; i<2; i++ ));do
 	PGDEV=/proc/net/pktgen/h1-eth0
 	
-	SPEED=`expr 1000`
+	SPEED=`expr 600`
 #+ $SPEED`
 	DELAY=`expr ${BASIC_DELAY} / $SPEED`
 	PPS=`expr ${SPEED} \* ${BASIC_SPEED}`
@@ -71,7 +71,7 @@ pgset "udp_dst_max 6555"
 	    PPS=50000000
 	fi
 	PKT_COUNT=`expr $SEND_TOTAL_TIME \* $PPS`
-	#PKT_COUNT=1000
+	PKT_COUNT=1000
 	echo "${PPS}/pps,send ${PKT_COUNT}pkt"
 	
 	pgset "count $PKT_COUNT"

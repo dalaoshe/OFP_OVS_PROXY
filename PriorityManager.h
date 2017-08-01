@@ -75,24 +75,37 @@ public:
     }
 
     void updateSplitOfUEP(uint32_t splitId, Split::UEPID uep, uint32_t number) {
-        if(this->windowBuffer->aheadofHead(splitId) || !this->windowBuffer->aheadoftail(splitId)) {
-            Split split;
-            split.addUEP(uep, number);
-            this->windowBuffer->putdData(split);
-        }
-        else {
+        this->windowBuffer->printHeadTail(splitId);
+        if ((!this->windowBuffer->aheadofHead(splitId)) && this->windowBuffer->aheadoftail(splitId)) {
             Split old = this->windowBuffer->getData(splitId);
             old.addUEP(uep, number);
             this->windowBuffer->updateData(splitId, old);
+           fprintf(stderr, "UEP:[%02X,%02X] ADD window_id:%lu uep_window_number:%lu n_window_total:%lu \n", uep.eid, uep.uid, splitId, old.getUEPNumber(uep), old.totalNumberSplit);
         }
+        else {
+
+            Split split;
+            split.addUEP(uep, number);
+            if(!this->windowBuffer->aheadoftail(splitId))
+                this->windowBuffer->updateHeadTail(splitId);
+            this->windowBuffer->putdData(split);
+           // fprintf(stderr, "UEP:[%02X,%02X] update window_id:%lu uep_window_number:%lu n_window_total:%lu \n", uep.eid, uep.uid, splitId, split.getUEPNumber(uep), split.totalNumberSplit);
+        }
+
     }
 
     double getUEPRatioOfSplitK(uint32_t splitId, Split::UEPID uep) {
+        Split split = ((Split)this->windowBuffer->getData(splitId));
         uint32_t UEP = ((Split)this->windowBuffer->getData(splitId)).getUEPNumber(uep);
         uint32_t TOTAL = this->windowBuffer->getTotal(splitId - this->windowSize + 1, this->windowSize).totalNumberSplit;
-        //fprintf(stderr, "UEP:[%02X,%02X] window_id:%lu uep_window_number:%lu n_window_total:%lu \n", uep.eid, uep.uid, splitId, UEP, TOTAL);
+        fprintf(stderr, "UEP:[%02X,%02X] window_id:%lu uep_window_number:%lu n_window_total:%lu \n", uep.eid, uep.uid, splitId, UEP, TOTAL);
+        double avg_ratio = 1.0 / split.uepMap.size();
         if(TOTAL == 0) return 0.0;
-        return (double)UEP / (double)TOTAL;
+        //double ratio = (double)UEP / (double)TOTAL - avg_ratio + 0.2;
+        double ratio = (double)UEP / ((double)TOTAL + 5.0);
+        fprintf(stderr, "UEP:[%02X,%02X] window_id:%lu uep_window_number:%lu n_window_total:%lu priority:%lf\n", uep.eid, uep.uid, splitId, UEP, TOTAL, exp(-ratio));
+        return ratio;
+
     }
 
     double convertRatioToPriority(double ratio) {
@@ -108,13 +121,16 @@ public:
         return convertRatioToPriority(ratio);
     }
 
+    bool isDangerous(double priority) {
+        return priority < 0.5;
+    }
     uint16_t getNowWindowId() {
         timeval end;
         gettimeofday(&end, NULL);
         double s = end.tv_sec - this->start.tv_sec;
         double us = end.tv_usec - this->start.tv_usec;
         double ms = s * 1000.0 + us / 1000.0;
-        uint16_t wid = uint16_t((ms / 100)) ;//% (this->bufferSize);
+        uint16_t wid = uint16_t((ms / 2000)) ;//% (this->bufferSize);
         return wid;
     }
 };

@@ -85,7 +85,7 @@ bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2);
 #define MULTI_PART_REPLY_QUEUE_ID 1
 #define MSG_QUEUE_ID 2
 
-controller to switch
+//controller to switch
 #define IMPORTANT_QUEUE_ID 0
 #define LLDP_QUEUE_ID 0
 #define FLOW_MOD_QUEUE_1_ID 1
@@ -361,11 +361,11 @@ public:
         double ms2 = s2 * 1000.0 + us2 / 1000.0;
         if(msg->uepid.uid != 0) {
             //if(msg->uepid.uid == 2 || msg->uepid.uid == 4) {
-                fprintf(stderr,"UEP:[%02X,%02X]\tMsg_Type:%s\tIdentify:%lu\tUsed Time:%lf\tSend Time:%lf\t\n",
-                        msg->uepid.eid,
-                        msg->uepid.uid,
-                        getOFPMsgType(msg->ofp_type).c_str(),
-                        msg->identity, ms, ms2);
+//                fprintf(stderr,"UEP:[%02X,%02X]\tMsg_Type:%s\tIdentify:%lu\tUsed Time:%lf\tSend Time:%lf\t\n",
+//                        msg->uepid.eid,
+//                        msg->uepid.uid,
+//                        getOFPMsgType(msg->ofp_type).c_str(),
+//                        msg->identity, ms, ms2);
 
                 fprintf(this->mark_result_fd,"UEP:[%02X,%02X]\tMsg_Type:%s\tIdentify:%lu\tUsed Time:%lf\tSend Time:%lf\t\n",
                         msg->uepid.eid,

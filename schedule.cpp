@@ -530,7 +530,7 @@ void do_ofp_flowmod_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule) {
         arg.uepid = uep.uepid;
         arg.identify = hdr->cookie;
 
-        if(arg.priority > 0.5) {
+        if(! schedule->getConf()->getPriorityManager()->isDangerous(arg.priority)) {
             arg.qid = FLOW_MOD_QUEUE_1_ID;
         }
         else{
@@ -591,7 +591,7 @@ void do_ofp_packetout_processed(char* msg, OFP_Msg_Arg &arg, Schedule* schedule)
 
         arg.priority = schedule->getConf()->getPriorityManager()->getUEPPriorityOfSplitK(uep.window, uep.uepid);
         arg.uepid = uep.uepid;
-        if(arg.priority > 0.5) {
+        if(! schedule->getConf()->getPriorityManager()->isDangerous(arg.priority)) {
             arg.qid = PO_QUEUE_1_ID;
         }
         else{

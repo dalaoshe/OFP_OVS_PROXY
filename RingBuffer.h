@@ -7,6 +7,8 @@
 
 
 #include <cstdint>
+#include <cstdio>
+
 template <class T>
 class RingBuffer {
     uint32_t buffer_size;
@@ -31,7 +33,7 @@ public:
         this->buffer[tail % buffer_size] = data;
         this->current_size += 1;
         tail += 1;
-        if(this->current_size < this->window_size) {
+        if(this->current_size <= this->window_size) {
 
         }
         else {// >=
@@ -63,6 +65,18 @@ public:
 
     bool updateData(uint32_t index, T data) {
         this->buffer[index % this->buffer_size] = data;
+    }
+
+    void updateHeadTail(uint32_t new_head) {
+        this->head = new_head;
+        this->tail = this->head;
+        this->current_size = 0;
+        fprintf(stderr, "UPDATE HEAD:%u Tail:%u NEW:%u\n",head, tail, new_head );
+    }
+    void printHeadTail(uint32_t new_head) {
+        //this->head = new_head;
+        //this->tail = this->head;
+        fprintf(stderr, "Now HEAD:%u Tail:%u NEW:%u\n",head, tail, new_head );
     }
 };
 
