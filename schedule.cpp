@@ -13,6 +13,9 @@ int32_t Schedule::putMessage(char* msg, int32_t len, int32_t fd) {
     ofp_msg->uepid = arg.uepid;
     ofp_msg->len = arg.len;
     ofp_msg->priority = arg.priority;
+
+    ofp_msg->priority = 1;
+
     ofp_msg->max_wait_time = arg.max_wait_time;
     ofp_msg->process_time = arg.process_time;
     int64_t pid = this->queues[arg.qid]->putMsg(ofp_msg);
@@ -92,7 +95,7 @@ int32_t Schedule::run() {
     pipeArg->pos_map = &this->pos_map;
     pthread_t pipe_t;
 
-    int32_t max_in_process = 10;
+    int32_t max_in_process = 12;
 
     while (1) {
 

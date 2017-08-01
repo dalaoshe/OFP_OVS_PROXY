@@ -86,23 +86,23 @@ bool lessPriority (const OFP_Msg &t1, const OFP_Msg &t2);
 #define MSG_QUEUE_ID 2
 
 //controller to switch
-#define IMPORTANT_QUEUE_ID 0
-#define LLDP_QUEUE_ID 0
-#define FLOW_MOD_QUEUE_1_ID 1
-#define PO_QUEUE_1_ID 2
-#define FLOW_MOD_QUEUE_2_ID 7
-#define PO_QUEUE_2_ID 8
-#define MULTI_PART_REQUEST_QUEUE_ID 0
-#define LEAST_QUEUE_ID 9
-
 //#define IMPORTANT_QUEUE_ID 0
 //#define LLDP_QUEUE_ID 0
-//#define FLOW_MOD_QUEUE_1_ID 0
-//#define PO_QUEUE_1_ID 0
-//#define FLOW_MOD_QUEUE_2_ID 0
-//#define PO_QUEUE_2_ID 0
+//#define FLOW_MOD_QUEUE_1_ID 1
+//#define PO_QUEUE_1_ID 2
+//#define FLOW_MOD_QUEUE_2_ID 7
+//#define PO_QUEUE_2_ID 8
 //#define MULTI_PART_REQUEST_QUEUE_ID 0
-//#define LEAST_QUEUE_ID 9
+#define LEAST_QUEUE_ID 9
+
+#define IMPORTANT_QUEUE_ID 0
+#define LLDP_QUEUE_ID 0
+#define FLOW_MOD_QUEUE_1_ID 0
+#define PO_QUEUE_1_ID 0
+#define FLOW_MOD_QUEUE_2_ID 0
+#define PO_QUEUE_2_ID 0
+#define MULTI_PART_REQUEST_QUEUE_ID 0
+#define LEAST_QUEUE_ID 9
 
 #define LLDP_TYPE 0x88cc
 #define ARP 0x806
