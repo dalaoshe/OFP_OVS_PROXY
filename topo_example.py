@@ -36,8 +36,52 @@ class MyTreeTopo( Topo ):
             host = self.addHost('h%s' % str(i + 2))
             h.append(host)
             self.addLink(host, s[1], bw=1000, max_queue_size=10000)
-        #self.add
-        #self.addLink()
+            #self.add
+            #self.addLink()
+
+    def build_2(self, depth=1, fanout=2 ):
+        # Numbering:  h1..N, s1..M
+        self.hostNum = 1
+        self.switchNum = 1
+        # Build topology
+        #self.addTree( depth, fanout )
+
+        s_1 = list()
+        s_2 = list()
+        h =list()
+
+        for i in range(2, 12):
+            s_1.append(self.addSwitch('s%s' % str(i)))
+        for i in range(12, 14):
+            s_2.append(self.addSwitch('s%s' % str(i)))
+
+        s_i = self.addSwitch('s%s' % str(1))
+        s_o = self.addSwitch('s%s' % str(15))
+
+        self.addLink(s_i, s_1[0], bw=1000, max_queue_size=10000)
+        for i in range(9):
+            self.addLink(s_1[i], s_1[i+1], bw=1000, max_queue_size=10000)
+        self.addLink(s_1[9], s_o, bw=1000, max_queue_size=10000)
+
+
+        self.addLink(s_i, s_2[0], bw=1000, max_queue_size=10000)
+        for i in range(1):
+            self.addLink(s_2[i], s_2[i+1], bw=1000, max_queue_size=10000)
+        self.addLink(s_2[1], s_o, bw=1000, max_queue_size=10000)
+
+
+
+        for i in range(1, 3):
+            host = self.addHost('h%s' % str(i))
+            h.append(host)
+            self.addLink(host, s_i, bw=1000, max_queue_size=10000)
+
+        for i in range(1, 3):
+            host = self.addHost('h%s' % str(i + 2))
+            h.append(host)
+            self.addLink(host, s_o, bw=1000, max_queue_size=10000)
+            #self.add
+            #self.addLink()
 
     def addTree( self, depth, fanout ):
         """Add a subtree starting with node n.
@@ -53,12 +97,12 @@ class MyTreeTopo( Topo ):
             node = self.addHost( 'h%s' % self.hostNum )
             self.hostNum += 1
         return node
-
+import os
 def simpleTest(ip, port, rate):
     topo = MyTreeTopo(depth = 3, fanout = 2)
     net = Mininet(topo=topo, switch=OVSSwitch,
-        controller=lambda name: RemoteController(name, ip=ip, port=int(port)),
-        autoSetMacs=True, link=TCLink)
+                  controller=lambda name: RemoteController(name, ip=ip, port=int(port)),
+                  autoSetMacs=True, link=TCLink)
     net.start()
     # print 'sleeping...'
     # time.sleep(30)
@@ -75,6 +119,11 @@ def simpleTest(ip, port, rate):
     # pid1 = int(hosts[0].cmd('echo $!'))
     # hosts[2].cmd('./attackOf.sh 30 &')cd M
     # pid3 = int(hosts[2].cmd('echo $!'))
+    # for i in range(3, 12):
+    #     cmd = "ovs-ofctl add-flow s%d 'table=0,hard_timeout=0, idle_timeout=0,priority=2, nw_src=10.0.0.1, dl_type=0x800, nw_dst=10.0.0.3, actions=output:2'" % i
+    #     os.system(cmd)
+    # cmd = "ovs-ofctl add-flow s2 'table=0,hard_timeout=0, idle_timeout=0,priority=2, nw_src=10.0.0.1, dl_type=0x800, nw_dst=10.0.0.3, actions=output:1'"
+    # os.system(cmd)
     CLI(net)
     # hosts[0].cmd('kill -9 ', pid1)
     # hosts[1].cmd('kill -9 ', pid2)

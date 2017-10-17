@@ -677,7 +677,9 @@ OFP_Msg_Arg Schedule::getOFPMsgArg(char *msg) {
 
             arg.uepid.uid = 0x56;
             arg.uepid.eid = 0x55;
-            arg.priority = this->getConf()->getPriorityManager()->getUEPPriorityOfSplitK(1, arg.uepid);
+            uint16_t nid = this->getConf()->getPriorityManager()->getNowWindowId();
+            this->getConf()->getPriorityManager()->updateSplitOfUEP(nid, arg.uepid, 1);
+            arg.priority = this->getConf()->getPriorityManager()->getUEPPriorityOfSplitK(nid, arg.uepid);
            // fprintf(stderr, "RECEIVE FLOW REQUEST COOKIE:%lu \n", arg.identify);
             break;
         }

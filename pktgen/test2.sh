@@ -32,13 +32,13 @@ function pg() {
 	DATA=a.txt
     	
     pgset "rem_device_all"
-    pgset "add_device enp3s0f0"
+    pgset "add_device enp4s0f0"
     pgset "max_before_softirq 10000"
     
     # Configure the individual devices
     echo "Configuring devices"
     
-    PGDEV=/proc/net/pktgen/enp3s0f0
+    PGDEV=/proc/net/pktgen/enp4s0f0
     
     pgset "clone_skb 0"
     pgset "pkt_size 60"
@@ -60,7 +60,7 @@ pgset "udp_dst_max 6555"
     SPEED=2
     echo "Running... ctrl^C to stop"
     for (( i=1; i<2; i++ ));do
-	PGDEV=/proc/net/pktgen/enp3s0f0
+	PGDEV=/proc/net/pktgen/enp4s0f0
 	
 	SPEED=`expr 2000`
 #+ $SPEED`
@@ -82,7 +82,7 @@ pgset "udp_dst_max 6555"
 	echo ${PPS} >> $DATA
 	pgset "start"
 	
-	CONTENT=`cat /proc/net/pktgen/enp3s0f0`
+	CONTENT=`cat /proc/net/pktgen/enp4s0f0`
 	echo $CONTENT
 
 	#echo 'sleep ${BLOCK_TIME}s'
